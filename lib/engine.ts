@@ -2,11 +2,16 @@
 // Serverless-friendly: call timelines are stored as rows; tick() lazily applies due events,
 // so any request (SSE poll, page refresh) advances state consistently.
 import { one, pool, q } from "./db";
-import { addDays, allowedDates, daysText, localDate, longDate, toISO, weekdayOf } from "./dates";
+import { addDays, allowedDates, daysText, formatDate, localDate, longDate, toISO, weekdayOf } from "./dates";
 import { virtualNow } from "./demo";
 import { detectLang, effectiveEarliest, effectiveLatest } from "./brain/rules";
 import { runTurn, type TurnResult } from "./brain/turn";
-import { generateTimeline, type Scenario, type ScenarioCtx } from "./calls/scenarios";
+import { generateTimeline, type Scenario, type ScenarioCtx, type Step } from "./calls/scenarios";
+import { dialogueSteps, receptionistFor, voiceDialogue, writeDialogue, type DialogueFacts, type DialogueKind } from "./calls/dialogue";
+import { validatePath } from "./calls/machine";
+import { background } from "./background";
+import { openrouterConfigured } from "./ai/openrouter";
+import { elevenConfigured } from "./voice/elevenlabs";
 import { buildIcs, googleConfigured, pushToGoogle, type InviteInput } from "./calendar";
 import { decideRebook } from "./rebook";
 import { getPersona, INSURERS } from "./personas";
@@ -38,13 +43,17 @@ export async function chatTurn(requestId: string, text: string): Promise<{ turn:
   const persona = getPersona(r.persona_id);
   const firstUser = r.messages.find((m) => m.role === "user")?.text ?? text;
   const convLang: Lang = persona.lang === "en" || detectLang(firstUser) === "en" ? "en" : "es";
-  const turn = await runTurn({ text, today: await today(), persona, query: r.query, expecting: r.expecting as never, convLang });
+  const ready = r.status === "ready";
+  const turn = await runTurn({ text, today: await today(), persona, query: r.query, expecting: r.expecting as never, convLang, history: r.messages.filter((m) => m.role !== "system"), ready });
   const shortlist = turn.action === "emergency" ? r.shortlist : await searchProviders(turn.query, persona, persona.lang === "en" ? "en" : "es");
+  // "yes, call them" with nothing that fits → keep asking instead of dialing an empty list
+  if (turn.action === "call" && !shortlist.some((c) => c.included)) turn.action = "search";
   const now = new Date().toISOString();
   const messages = [...r.messages, { role: "user", text, at: now }, { role: "assistant", text: turn.reply, at: now, kind: turn.action }];
   await q("UPDATE care_requests SET query=$2, expecting=$3, messages=$4, shortlist=$5, status=$6 WHERE id=$1",
     [requestId, JSON.stringify(turn.query), turn.expecting, JSON.stringify(messages), JSON.stringify(shortlist),
-      turn.action === "emergency" ? "emergency" : turn.action === "search" ? "ready" : "drafting"]);
+      turn.action === "emergency" ? "emergency" : turn.action === "search" || turn.action === "call" ? "ready" : "drafting"]);
+  if (turn.action === "call") await startCalls(requestId);
   return { turn, shortlist, persona };
 }
 
@@ -113,6 +122,63 @@ async function createCall(requestId: string, providerId: string, purpose: string
   return call!.id;
 }
 
+// ---------- unscripted calls: header now, conversation written + voiced in the background ----------
+const DIALOGUE_KIND: Partial<Record<Scenario, DialogueKind>> = { success: "book", busy_nofit: "nofit", ivr_nofit: "nofit", rebook: "rebook", cancel: "cancel" };
+
+function factsFor(persona: Persona, query: ProviderQuery, provider: { id: string; name: string }, lang: Lang, sc: ScenarioCtx): DialogueFacts {
+  const tw = query.time_windows.map((w) => `${w.start}-${w.end}`).join(" o ");
+  const latest = effectiveLatest(query);
+  return {
+    lang, office: provider.name, receptionist: receptionistFor(hash(provider.id)),
+    patient: sc.patient, caller_relation: persona.patient ? `${persona.name}, who is the patient's family (the patient is their ${persona.patient.relation})` : null,
+    specialty: sc.specialty, reason: null, notes: query.notes ?? [], days: sc.days, timeText: tw || null,
+    deadlineText: query.asap ? (lang === "en" ? "as soon as possible" : "lo antes posible") : latest ? `${query.deadline_label ?? ""} (${lang === "en" ? "no later than" : "a más tardar"} ${formatDate(latest, lang)})`.trim() : null,
+    insurance: sc.insurance, offerText: sc.offerText, laterText: sc.laterText, currentText: sc.currentText,
+  };
+}
+
+function wantsAudio(kind: DialogueKind) {
+  const mode = process.env.CALL_AUDIO || "featured"; // featured | all | off  (free ElevenLabs tier: 10k chars/month)
+  return elevenConfigured() && (mode === "all" || (mode === "featured" && kind !== "nofit"));
+}
+
+async function createLiveCall(requestId: string, provider: { id: string; name: string }, purpose: string, scenario: Scenario, sc: ScenarioCtx, facts: DialogueFacts, startOffsetSec = 0, appointmentId: string | null = null) {
+  const template = generateTimeline(scenario, sc);
+  const kind = DIALOGUE_KIND[scenario];
+  if (!kind || !openrouterConfigured()) return createCall(requestId, provider.id, purpose, scenario, template, startOffsetSec, appointmentId);
+  const tHuman = template.find((x) => x.state === "HUMAN")!.t;
+  // keep the phone "ringing" until the conversation is ready; pickup is inserted with it
+  const header = template.filter((x) => x.t < tHuman && !(x.speaker === "agent" || (x.speaker === "office" && x.state !== "IVR")));
+  const rest = template.filter((x) => !header.includes(x));
+  const callId = await createCall(requestId, provider.id, purpose, scenario, header, startOffsetSec, appointmentId);
+  const start = Date.now() + startOffsetSec * 1000;
+  const effect = (template.find((x) => x.payload?.effect && x.payload.effect !== "waitlist")?.payload ?? {}) as Record<string, unknown>;
+  background(`call:${callId}`, async () => {
+    let steps: Step[] | null = null;
+    const lines = await writeDialogue(kind, facts).catch(() => null);
+    if (lines) {
+      let voiced: Awaited<ReturnType<typeof voiceDialogue>> | null = null;
+      if (wantsAudio(kind)) voiced = await voiceDialogue(lines, facts).catch((e) => { console.warn("[call audio] failed", e.message); return null; });
+      const t0 = Math.max(tHuman + 0.4, (Date.now() - start) / 1000 + 0.8);
+      const d = dialogueSteps(lines, t0, effect, voiced?.timings);
+      const pickup: Step = { t: t0 - 0.3, state: "HUMAN", speaker: "system", text: facts.lang === "en" ? "A person answered" : "Contestó una persona" };
+      steps = [pickup, ...d.steps, { t: d.end + 0.3, state: "COMPLETED" }];
+      if (voiced) {
+        steps.unshift({ t: t0, payload: { audio: voiced.src, audio_start: true } });
+        await q("UPDATE call_tasks SET audio=$2 WHERE id=$1", [callId, voiced.src]);
+      }
+      try { validatePath([...header, ...steps].filter((x) => x.state).map((x) => x.state!)); } catch (e) { console.warn("[dialogue] invalid path", (e as Error).message); steps = null; }
+    }
+    if (!steps) {
+      // template fallback, shifted so nothing lands in the past
+      const shift = Math.max(0, (Date.now() - start) / 1000 + 0.5 - (rest[0]?.t ?? 0));
+      steps = rest.map((x) => ({ ...x, t: x.t + shift }));
+    }
+    await insertTimeline(callId, start, steps);
+  });
+  return callId;
+}
+
 export async function startCalls(requestId: string) {
   const r = await getRequest(requestId);
   if (!r) throw new Error("request not found");
@@ -142,7 +208,8 @@ export async function startCalls(requestId: string) {
       else { sc.offerISO = offer; sc.offerText = longDate(offer, lang); }
     }
     if (scenario === "busy_nofit" || scenario === "ivr_nofit") sc.laterText = longDate(laterThanDeadline(c, r.query, day0), lang, false);
-    await createCall(requestId, c.id, "book", scenario, generateTimeline(scenario, sc), i * 0.35);
+    if (scenario === "hero") await createCall(requestId, c.id, "book", scenario, generateTimeline(scenario, sc), i * 0.35);
+    else await createLiveCall(requestId, c, "book", scenario, sc, factsFor(persona, r.query, c, lang, sc), i * 0.35);
     i++;
   }
   await q("UPDATE care_requests SET status='calling' WHERE id=$1", [requestId]);
@@ -278,7 +345,10 @@ export async function rebookScan(requestId: string) {
     const ctx = ctxFor(persona, r.query, lang);
     const hero = persona.id === "marisol" && s.provider_id === "pod-hatorey";
     const scenario: Scenario = hero ? "rebook_hero" : "rebook";
-    await createCall(requestId, s.provider_id, "rebook", scenario, generateTimeline(scenario, { ...ctx, offerISO: iso, offerText: longDate(iso, lang), currentText: longDate(current, lang) }), 0.5, appt.id);
+    const rsc: ScenarioCtx = { ...ctx, offerISO: iso, offerText: longDate(iso, lang), currentText: longDate(current, lang) };
+    const prov = await one<{ id: string; name: string }>("SELECT id, name FROM providers WHERE id=$1", [s.provider_id]);
+    if (hero) await createCall(requestId, s.provider_id, "rebook", scenario, generateTimeline(scenario, rsc), 0.5, appt.id);
+    else await createLiveCall(requestId, prov!, "rebook", scenario, rsc, factsFor(persona, r.query, prov!, lang, rsc), 0.5, appt.id);
     await notify(requestId, "scan", lang === "en" ? "Background check found an earlier opening. Calling to move you." : "La revisión automática encontró un espacio más temprano. Llamando para moverte.");
     return { action: "rebook", reason: d.reason, slot: iso };
   }
@@ -297,7 +367,10 @@ export async function cancelAppointment(requestId: string) {
   // the pre-rendered audio says "jueves 29 de octubre", so only use it when that is the date being cancelled
   const hero = persona.id === "marisol" && appt.provider_id === "pod-hatorey" && localDate(iso) === "2026-10-29";
   const scenario: Scenario = hero ? "cancel_hero" : "cancel";
-  await createCall(requestId, appt.provider_id, "cancel", scenario, generateTimeline(scenario, { ...ctxFor(persona, r.query, persona.lang), currentText: longDate(iso, persona.lang) }), 0.3, appt.id);
+  const csc: ScenarioCtx = { ...ctxFor(persona, r.query, persona.lang), currentText: longDate(iso, persona.lang) };
+  const prov = await one<{ id: string; name: string }>("SELECT id, name FROM providers WHERE id=$1", [appt.provider_id]);
+  if (hero) await createCall(requestId, appt.provider_id, "cancel", scenario, generateTimeline(scenario, csc), 0.3, appt.id);
+  else await createLiveCall(requestId, prov!, "cancel", scenario, csc, factsFor(persona, r.query, prov!, persona.lang, csc), 0.3, appt.id);
 }
 
 // ---------- snapshot for the UI ----------

@@ -60,3 +60,9 @@ CREATE TABLE IF NOT EXISTS watchers (
 CREATE TABLE IF NOT EXISTS notifications (
   id bigserial PRIMARY KEY, request_id uuid REFERENCES care_requests(id) ON DELETE CASCADE,
   kind text NOT NULL, text text NOT NULL, payload jsonb, created_at timestamptz NOT NULL DEFAULT now());
+
+-- Synthesized audio (ElevenLabs) + its cue sheet. Doubles as a cache keyed by content hash so
+-- re-running the demo doesn't spend TTS characters twice. Not truncated by demo reset.
+CREATE TABLE IF NOT EXISTS audio_clips (
+  id text PRIMARY KEY, mime text NOT NULL DEFAULT 'audio/mpeg', data bytea NOT NULL,
+  meta jsonb, created_at timestamptz NOT NULL DEFAULT now());

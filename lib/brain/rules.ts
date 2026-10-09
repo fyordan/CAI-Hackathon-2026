@@ -9,8 +9,8 @@ export const norm = (s: string) =>
   s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
 
 // ---------- language ----------
-const ES_WORDS = /\b(tengo|necesito|quiero|que|los|las|del|por|para|mi|me|una?|solo|antes|despues|minutos|casa|trabajo|cita|dolor|puedo|semana|hasta|de|con|lo|el|la)\b/g;
-const EN_WORDS = /\b(i|need|my|the|with|who|speaks|within|minutes|home|work|before|after|appointment|weekdays|either|from|sometime|next|month|max|any|a|an|of)\b/g;
+const ES_WORDS = /\b(tengo|necesito|quiero|que|los|las|del|por|para|mi|una?|duele|salio|tiene|esta|pero|muy|hace|y|solo|antes|despues|minutos|casa|trabajo|cita|dolor|puedo|semana|hasta|de|con|lo|el|la)\b/g;
+const EN_WORDS = /\b(i|need|my|is|it|the|with|who|speaks|within|minutes|home|work|before|after|appointment|weekdays|either|from|sometime|next|month|max|any|a|an|of)\b/g;
 export function detectLang(text: string): Lang | "mixed" {
   const t = norm(text);
   const es = (t.match(ES_WORDS) || []).length;
@@ -19,10 +19,21 @@ export function detectLang(text: string): Lang | "mixed" {
   return en > es ? "en" : "es";
 }
 
+/** Clear language of a single message, or null when too short/ambiguous to tell (keep the conversation's). */
+export function langHint(text: string): Lang | null {
+  const t = norm(text);
+  const es = (t.match(ES_WORDS) || []).length + (/[ñ¿¡]|\b(dale|si|claro|gracias|vale|pues|bueno)\b/.test(text.toLowerCase()) ? 1 : 0);
+  const en = (t.match(EN_WORDS) || []).length;
+  if (es === 0 && en === 0) return null;
+  if (en === 0) return "es";
+  if (es === 0) return "en";
+  return es >= 2 * en ? "es" : null; // mixed / Spanglish → keep the conversation's language
+}
+
 // ---------- safety: red flags (runs before anything else) ----------
 const RED_FLAGS: { id: string; re: RegExp; crisis?: boolean }[] = [
-  { id: "chest_pain", re: /(dolor|presion|opresion|apreta\w*) (de|en el|en mi) pecho|pecho apretado|chest (pain|pressure|tightness)|pain in my chest/ },
-  { id: "stroke", re: /cara (caida|torcida|ladeada)|boca torcida|no puede hablar|habla enredad|face (is )?droop|drooping|can'?t (talk|speak) (right|properly)|slurred/ },
+  { id: "chest_pain", re: /(dolor|presion|opresion|apreta\w*) (de|en el|en mi) pecho|pecho apretado|(me|le|nos) (duele|aprieta|arde) (mucho |bastante )?(el|en el) pecho|chest (pain|pressure|tightness)|pain in my chest|(my|his|her) chest (hurts|is tight)/ },
+  { id: "stroke", re: /cara (caida|torcida|ladeada)|boca torcida|no puede hablar|habla enredad|no (puede|puedo) mover (el|la|un|una|medio)|face (is )?droop|drooping|can'?t (talk|speak) (right|properly)|slurred|can'?t move (his|her|my) (arm|leg|face)/ },
   { id: "breathing", re: /no puedo respirar|me falta el aire|falta de aire|me ahogo|can'?t breathe|shortness of breath|short of breath/ },
   { id: "bleeding", re: /no (para|deja) de sangrar|sangrando mucho|won'?t stop bleeding|bleeding a lot/ },
   { id: "self_harm", re: /me quiero morir|quiero morir|me quiero matar|no quiero vivir|suicid|kill myself|want to die|end my life|hacerme dano/, crisis: true },
@@ -59,6 +70,9 @@ const KW: Record<Specialty, [RegExp, number][]> = {
   psychiatry: [[/psiquiatr|psychiatr|ansiedad|anxiety|depresion|depress|panico|panic/, 3], [/no duermo|insomnio|insomnia/, 2]],
   family_medicine: [[/medico primario|primary care|medico de cabecera|chequeo general|physical exam|generalista|\bpcp\b/, 3], [/\b(receta|refill|referido|referral)\b/, 1]],
   dentistry: [[/dentist|muela|diente|dientes|tooth|teeth|caries|encia|\bgum\b/, 3]],
+  neurology: [[/neurolog|migrana|migraine|neuropat|epilepsi|vertigo|mareos?\b|dizz/, 3], [/\b(dolor de cabeza|headaches?|entumecid\w*|numbness)\b/, 2]],
+  urology: [[/urolog|prostat|kidney stones?|piedras? en (el|los) rinon/, 3], [/\b(orinar|urinat\w*|vejiga|bladder)\b/, 2]],
+  pulmonology: [[/neumolog|pulmonolog|asma\b|asthma|epoc|copd|apnea/, 3], [/\b(tos cronica|chronic cough|pulmon\w*|lungs?)\b/, 2]],
   urgent_care: [],
 };
 const CHILD = /\b(mi nena|mi nene|mi hij[oa]|mi bebe|my (son|daughter|kid|child|baby))\b|\b([1-9]|1[0-7]) (anos|years? old)\b/;

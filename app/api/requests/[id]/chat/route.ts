@@ -16,13 +16,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { turn, shortlist, persona } = await chatTurn(id, text);
   const pace = turn.engine === "rules" ? Number(process.env.DEMO_PACE_MS ?? 380) : 0;
   const lang = persona.lang === "en" ? "en" : "es";
+  console.log(`[chat] engine=${turn.engine} model=${turn.model ?? "-"} llm_ms=${turn.llm_ms ?? "-"} action=${turn.action}`);
   const enc = new TextEncoder();
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   const stream = new ReadableStream({
     async start(ctrl) {
       const send = (event: string, data: unknown) => ctrl.enqueue(enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-      send("meta", { engine: turn.engine, action: turn.action, paced_ms: pace });
+      send("meta", { engine: turn.engine, action: turn.action, paced_ms: pace, model: turn.model ?? null, llm_ms: turn.llm_ms ?? null, lang: turn.lang });
       if (turn.action === "emergency") {
         send("emergency", { flag: turn.redFlag, reply: turn.reply });
         send("done", {});
@@ -42,7 +43,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         await sleep(pace);
       }
       send("shortlist", shortlist);
-      for (const w of turn.reply.split(/(\s+)/)) { send("token", w); if (pace) await sleep(18); }
+      for (const w of turn.reply.split(/(\s+)/)) { send("token", w); await sleep(pace ? 18 : 6); }
       send("done", { action: turn.action, expecting: turn.expecting, missing: turn.missing });
       ctrl.close();
     },

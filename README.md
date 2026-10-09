@@ -10,18 +10,18 @@ calendar invite, keeps watching for an earlier opening, and can call to cancel s
 |---|---|---|
 | Provider directory (115 offices) | **Synthetic** | Invented names, 787-555 phones, hours, plans, languages. Coordinates are approximate real town locations. |
 | Insurance plans | **Synthetic acceptance** | Insurer names are real PR carriers; which office takes which plan is made up. |
-| Understanding messages | **Real, rule-based** | `lib/brain/rules.ts`: keyword triage + constraint extraction (ES/EN/Spanglish). No LLM ran. `lib/brain/llm.ts` (OpenRouter, strict JSON schema) is wired but untested: no key, and openrouter.ai was unreachable from the build machine. |
-| Chip streaming pace | **Artificial** | Rules answer instantly; `/api/requests/[id]/chat` adds ~380 ms between chips (`DEMO_PACE_MS`). |
-| Emergency screening | **Real, deterministic** | Runs before any model; disables search/calling. Heuristic, not clinically validated. |
+| Understanding messages | **Real, LLM + fallback** | `lib/brain/llm.ts`: one strict-JSON call to `FAST_MODEL` (OpenRouter, ~1-1.5 s) extracts the query, intent ("yes, call them") and writes the reply. Falls back to the offline rule parser `lib/brain/rules.ts` on error/timeout. |
+| Chip streaming pace | **Artificial (rules only)** | When the rule brain answers, `/api/requests/[id]/chat` adds ~380 ms between chips (`DEMO_PACE_MS`). LLM turns stream immediately. |
+| Emergency screening | **Real, deterministic + LLM** | Regex screen runs first and can't be overridden; the LLM can add an emergency the regex missed. Heuristic, not clinically validated. |
 | Search + filters + ranking | **Real** | Parameterized SQL on Postgres 16 (Neon-compatible), then plan/day/hours/language/access/drive filters. |
 | Drive times | **Estimated** | Straight-line × 1.25 at 60 km/h + 3 min (`lib/geo.ts`). Swap for Google Routes `computeRouteMatrix`. |
 | Map | **Offline basemap** | Leaflet + Natural Earth PR outline, no streets. Pan/zoom/fit-to-pins are real. Google Maps JS not wired. |
-| Phone calls | **Simulated** | Deterministic timelines (`lib/calls/scenarios.ts`), validated against a state machine. No call is ever placed. Retries are sped up. |
-| Call audio | **Synthetic** | 3 scripted Spanish calls for Marisol voiced with Kokoro TTS (`scripts/tts_calls.py`). Other personas: transcript only. |
+| Phone calls | **Simulated** | Outcomes are deterministic (`lib/calls/scenarios.ts`) and validated against a state machine; the conversation is written per request by `REASONER_MODEL` (`lib/calls/dialogue.ts`), template fallback. No call is ever placed. |
+| Call audio | **Synthetic (ElevenLabs)** | Booking/rebook/cancel calls are voiced with ElevenLabs Text-to-Dialogue (`CALL_AUDIO=featured`); Marisol's 3 pinned calls are pre-rendered (`npm run voice:calls`). |
 | Book / move earlier / cancel | **Real logic, fake slots** | Book-then-release, one active booking per request (unique index), rebook only if strictly earlier and still valid. |
 | Calendar invite | **Real .ics, Google not connected** | Standards-compliant .ics (REQUEST/CANCEL, SEQUENCE). Google Calendar adapter in `lib/calendar.ts` is untested; no email is sent. |
 | Background re-check | **Simulated clock** | "Skip ahead 3 days" advances a virtual clock and runs the same `rebookScan()` a QStash job would call. |
-| Voice input | **Real where supported** | Browser Web Speech API. Recordings typed the text. |
+| Voice input | **Real** | MediaRecorder with silence detection → `/api/stt` (ElevenLabs Scribe, ~1 s). Replies read aloud via `/api/tts` (ElevenLabs Flash, cached in Postgres). Web Speech API only as fallback. |
 | Auth / personas | **Synthetic** | Four fictional personas, no login. |
 
 ## Demo recordings
@@ -39,10 +39,11 @@ npm run build && npm start   # http://localhost:3000
 npm test                # 77 unit tests (vitest)
 ```
 
-Optional: `OPENROUTER_API_KEY` (+ `REASONER_MODEL`) to try the LLM path; `GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN` for real invites.
+`OPENROUTER_API_KEY` + `ELEVENLABS_API_KEY` enable the LLM brain, generated calls and voice (see `.env.example` for `FAST_MODEL` / `REASONER_MODEL` and voice IDs). Without them the app falls back to rules, templates and browser dictation. `GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN` for real invites.
 
-Regenerate call audio: `pip install kokoro-onnx soundfile`, download `kokoro-v1.0.int8.onnx` + `voices-v1.0.bin`
-from the kokoro-onnx GitHub release into `$TTS_DIR`, then `npm run tts && python3 scripts/peaks.py`.
+Local Postgres via Docker: `docker run -d --name citaya-pg -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=citaya -p 5433:5432 postgres:16`
+
+Regenerate the pinned call audio with ElevenLabs: `npm run voice:calls` (~1.9k characters). The old Kokoro pipeline (`npm run tts`) is kept for offline use.
 
 Record demos: `python3 scripts/record/record.py desktop-marisol|phone-marisol|desktop-caregiver-safety|desktop-english`
 (Playwright video + ffmpeg muxes the call audio at the moments the page logged playback).

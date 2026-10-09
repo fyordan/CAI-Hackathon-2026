@@ -4,7 +4,7 @@
 export const SPECIALTIES = [
   "podiatry", "dermatology", "cardiology", "family_medicine", "ob_gyn", "pediatrics",
   "orthopedics", "ophthalmology", "ent", "gastroenterology", "endocrinology",
-  "psychiatry", "dentistry", "urgent_care",
+  "psychiatry", "dentistry", "neurology", "urology", "pulmonology", "urgent_care",
 ] as const;
 export type Specialty = (typeof SPECIALTIES)[number];
 
@@ -22,6 +22,9 @@ export const SPECIALTY_LABEL: Record<Specialty, { es: string; en: string; icon: 
   endocrinology: { es: "Endocrinología", en: "Endocrinology", icon: "🧪" },
   psychiatry: { es: "Psiquiatría", en: "Psychiatry", icon: "🧠" },
   dentistry: { es: "Dentista", en: "Dentistry", icon: "🦷" },
+  neurology: { es: "Neurología", en: "Neurology", icon: "🧠" },
+  urology: { es: "Urología", en: "Urology", icon: "💧" },
+  pulmonology: { es: "Neumología", en: "Pulmonology", icon: "🫁" },
   urgent_care: { es: "Sala de urgencias", en: "Urgent care", icon: "🚑" },
 };
 
@@ -47,6 +50,7 @@ export interface ProviderQuery {
   languages: Lang[];                // required clinician languages
   wheelchair: boolean;
   patient_is_requester: boolean;
+  notes?: string[];                 // preferences we can't filter on; the calling agent raises them
 }
 
 export const emptyQuery = (): ProviderQuery => ({

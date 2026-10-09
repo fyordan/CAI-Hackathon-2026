@@ -114,3 +114,17 @@ describe("ask vs search", () => {
     expect(r.reply).toMatch(/Listo/);
   });
 });
+
+describe("audit regressions (unscripted inputs)", () => {
+  it.each([
+    ["a mi mamá le duele el pecho ahora mismo", "chest_pain"],
+    ["my chest hurts and my arm is numb", "chest_pain"],
+    ["mi papá no puede mover el brazo izquierdo", "stroke"],
+  ])("red flag: %s → %s", (text, id) => expect(redFlag(text)?.id).toBe(id));
+  it("short English with 'me' is English", () => expect(detectLang("my tooth is killing me")).toBe("en"));
+  it.each([
+    ["tengo migraña", "neurology"],
+    ["I keep getting dizzy spells", "neurology"],
+    ["tengo asma y no se me controla", "pulmonology"],
+  ])("triage: %s → %s", (text, want) => expect(triage(text).specialty).toBe(want));
+});

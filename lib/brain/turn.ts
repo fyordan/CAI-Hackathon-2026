@@ -2,7 +2,7 @@
 import { daysText, formatDate } from "../dates";
 import { INSURERS } from "../personas";
 import { SPECIALTY_LABEL, type Lang, type Persona, type ProviderQuery, type Specialty } from "../types";
-import { detectLang, effectiveLatest, extract, redFlag, triage, type Expecting, type RedFlag } from "./rules";
+import { detectLang, effectiveLatest, extract, langHint, norm, redFlag, triage, type Expecting, type RedFlag } from "./rules";
 import { llmTurn } from "./llm";
 
 export interface TurnInput {
@@ -13,9 +13,15 @@ export interface TurnInput {
   expecting: Expecting;
   /** conversation language, fixed by the first user message (Spanglish → Spanish) */
   convLang?: Lang;
+  /** prior messages (oldest first) so the model can resolve "instead of Thursdays", "yes, call them" */
+  history?: { role: string; text: string }[];
+  /** shortlist already presented and we asked whether to call */
+  ready?: boolean;
+  /** language the reply must be in (decided deterministically, not by the model) */
+  replyLang?: Lang;
 }
 export interface TurnResult {
-  action: "ask" | "search" | "emergency";
+  action: "ask" | "search" | "emergency" | "call";
   lang: Lang;
   patch: Partial<ProviderQuery>;
   query: ProviderQuery;
@@ -25,6 +31,8 @@ export interface TurnResult {
   redFlag: RedFlag | null;
   engine: "rules" | "llm";
   alternatives: Specialty[];
+  model?: string;
+  llm_ms?: number;
 }
 
 export function missingSlots(q: ProviderQuery): Expecting[] {
@@ -38,37 +46,56 @@ export function missingSlots(q: ProviderQuery): Expecting[] {
 export async function runTurn(input: TurnInput): Promise<TurnResult> {
   const { text, today, persona, expecting } = input;
   const detected = detectLang(text);
-  const lang: Lang = input.convLang ?? (detected === "en" ? "en" : "es");
+  let lang: Lang = langHint(text) ?? input.convLang ?? (detected === "en" ? "en" : "es");
+  input = { ...input, replyLang: lang };
   const flag = redFlag(text); // deterministic, always first, never delegated to a model
   if (flag) {
     return { action: "emergency", lang, patch: {}, query: input.query, missing: [], expecting: null, reply: emergencyReply(flag, lang), redFlag: flag, engine: "rules", alternatives: [] };
   }
 
-  let engine: "rules" | "llm" = "rules";
-  let patch: Partial<ProviderQuery> = {};
-  let alternatives: Specialty[] = [];
   const llm = await llmTurn(input).catch(() => null);
   if (llm) {
-    engine = "llm";
-    patch = llm.patch;
-    alternatives = llm.alternatives;
-  } else {
-    if (!input.query.specialty || expecting === "specialty") {
-      const tr = triage(text);
-      if (tr.specialty) { patch.specialty = tr.specialty; patch.specialty_confidence = tr.confidence; alternatives = tr.alternatives; }
+    // the model can ADD an emergency the regex missed; it can never clear one (checked above)
+    if (llm.out.emergency !== "none") {
+      const f: RedFlag = { id: llm.out.emergency === "crisis" ? "self_harm_llm" : "medical_llm", crisis: llm.out.emergency === "crisis" };
+      return { action: "emergency", lang, patch: {}, query: input.query, missing: [], expecting: null, reply: emergencyReply(f, lang), redFlag: f, engine: "llm", alternatives: [], model: llm.model, llm_ms: llm.ms };
     }
-    Object.assign(patch, extract(text, today, persona, input.query, expecting));
+    const patch = withProfile(llm.patch, input);
+    const query: ProviderQuery = { ...input.query, ...patch };
+    const missing = missingSlots(query);
+    const base = { lang, patch, query, missing, redFlag: null, engine: "llm" as const, alternatives: llm.alternatives, model: llm.model, llm_ms: llm.ms };
+    const reply = llm.out.reply.trim();
+    if (missing.length) return { ...base, action: "ask", expecting: missing[0], reply: reply || askReply(missing[0], query, persona, lang) };
+    const confirm = llm.out.intent === "confirm_call" && (input.ready || Object.keys(llm.patch).length === 0);
+    return { ...base, action: confirm ? "call" : "search", expecting: null, reply: reply || readyReply(query, persona, lang) };
   }
-  if (!input.query.insurance && !patch.insurance) patch.insurance = persona.insurance;
-  if (persona.patient) patch.patient_is_requester = false;
+
+  const patch: Partial<ProviderQuery> = {};
+  let alternatives: Specialty[] = [];
+  if (!input.query.specialty || expecting === "specialty") {
+    const tr = triage(text);
+    if (tr.specialty) { patch.specialty = tr.specialty; patch.specialty_confidence = tr.confidence; alternatives = tr.alternatives; }
+  }
+  Object.assign(patch, extract(text, today, persona, input.query, expecting));
+  withProfile(patch, input);
 
   const query: ProviderQuery = { ...input.query, ...patch };
   const missing = missingSlots(query);
   if (missing.length === 0) {
-    return { action: "search", lang, patch, query, missing, expecting: null, reply: readyReply(query, persona, lang), redFlag: null, engine, alternatives };
+    const yes = input.ready && Object.keys(extract(text, today, persona, input.query, null)).length === 0 && YES.test(norm(text));
+    return { action: yes ? "call" : "search", lang, patch, query, missing, expecting: null, reply: yes ? callingReply(lang) : readyReply(query, persona, lang), redFlag: null, engine: "rules", alternatives };
   }
   const next = missing[0];
-  return { action: "ask", lang, patch, query, missing, expecting: next, reply: askReply(next, query, persona, lang), redFlag: null, engine, alternatives };
+  return { action: "ask", lang, patch, query, missing, expecting: next, reply: askReply(next, query, persona, lang), redFlag: null, engine: "rules", alternatives };
+}
+
+const YES = /^(si|sí|dale|ok|okay|yes|yeah|sure|claro|perfecto|adelante|go ahead|llamalos|llama(los)?|call them)\b/;
+const callingReply = (lang: Lang) => (lang === "en" ? "Calling the offices now. I'll let you know as soon as one confirms." : "Perfecto, ya estoy llamando a las oficinas. Te aviso en cuanto una confirme.");
+
+function withProfile(patch: Partial<ProviderQuery>, input: TurnInput) {
+  if (!input.query.insurance && !patch.insurance) patch.insurance = input.persona.insurance;
+  if (input.persona.patient) patch.patient_is_requester = false;
+  return patch;
 }
 
 function emergencyReply(f: RedFlag, lang: Lang) {

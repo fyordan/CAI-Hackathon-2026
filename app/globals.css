@@ -112,6 +112,8 @@ a { color: var(--adoquin); }
 .composer textarea { flex: 1; resize: none; border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-height: 44px; max-height: 120px; background: var(--paper); field-sizing: content; }
 .mic { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); cursor: pointer; flex: none; font-size: 18px; }
 .mic.on { background: var(--flamboyan); color: #fff; border-color: var(--flamboyan); }
+.mic:disabled { opacity: .6; cursor: progress; }
+.mic-error { margin: 0 12px 8px; padding: 8px 12px; border-radius: 10px; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; font-size: 14px; cursor: pointer; }
 
 /* ── map ── */
 .map { position: absolute; inset: 0; background: var(--sea); }

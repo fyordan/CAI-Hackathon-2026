@@ -10,6 +10,7 @@ import Transparency from "./Transparency";
 import { StatePill } from "./StatePill";
 import { hoursOn } from "./format";
 import { t } from "./i18n";
+import { useVoice } from "./useVoice";
 
 const MapView = dynamic(() => import("./MapView"), { ssr: false, loading: () => <div className="map" /> });
 
@@ -58,7 +59,9 @@ export default function Workspace({ persona }: { persona: Persona }) {
   const [showReal, setShowReal] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [toasts, setToasts] = useState<{ id: number; kind: string; text: string }[]>([]);
-  const [listening, setListening] = useState(false);
+  const [voiceOn, setVoiceOn] = useState(false);
+  const voiceOnRef = useRef(false);
+  voiceOnRef.current = voiceOn;
   const [engine, setEngine] = useState<string>("rules");
   const [freshKeys, setFreshKeys] = useState<Set<string>>(new Set());
   const seenNotes = useRef<number>(-1);
@@ -128,6 +131,7 @@ export default function Workspace({ persona }: { persona: Persona }) {
     const base = snap?.request.messages ?? [];
     const now = new Date().toISOString();
     let reply = "";
+    let replyLang: Lang = lang;
     setPending([...base, { role: "user", text, at: now }, { role: "assistant", text: "…", at: now }]);
     const res = await fetch(`/api/requests/${reqId}/chat`, { method: "POST", body: JSON.stringify({ text }) });
     const reader = res.body!.getReader();
@@ -141,7 +145,7 @@ export default function Workspace({ persona }: { persona: Persona }) {
       buf = rest;
       for (const { event, data } of out) {
         const d = JSON.parse(data);
-        if (event === "meta") setEngine(d.engine);
+        if (event === "meta") { setEngine(d.engine); if (d.lang) replyLang = d.lang; }
         if (event === "patch") {
           setLiveQuery(d.query);
           const keys = Object.keys(d.patch);
@@ -151,6 +155,8 @@ export default function Workspace({ persona }: { persona: Persona }) {
         if (event === "token") { reply += d; setPending([...base, { role: "user", text, at: now }, { role: "assistant", text: reply, at: now }]); }
         if (event === "emergency") { setEmergency({ reply: d.reply, said: text }); setPending([...base, { role: "user", text, at: now }, { role: "assistant", text: d.reply, at: now, kind: "emergency" }]); }
         if (event === "done" && d.action === "search") { setPanel("list"); }
+        if (event === "done" && d.action === "call") { setPanel("calls"); setTab("calls"); }
+        if (event === "done" && voiceOnRef.current) speakRef.current(reply, replyLang);
       }
     }
     setBusy(false);
@@ -186,19 +192,12 @@ export default function Workspace({ persona }: { persona: Persona }) {
     window.location.href = `/demo/${persona.id}`;
   };
 
-  const mic = () => {
-    type SR = { lang: string; interimResults: boolean; onresult: (e: { results: { 0: { transcript: string } }[] }) => void; onend: () => void; start: () => void };
-    const W = window as unknown as { SpeechRecognition?: new () => SR; webkitSpeechRecognition?: new () => SR };
-    const Ctor = W.SpeechRecognition ?? W.webkitSpeechRecognition;
-    if (!Ctor) { alert(lang === "es" ? "Este navegador no tiene dictado. Escribe el mensaje." : "This browser has no dictation. Type your message."); return; }
-    const r = new Ctor();
-    r.lang = lang === "es" ? "es-PR" : "en-US";
-    r.interimResults = false;
-    r.onresult = (e) => { const text = Array.from(e.results).map((x) => x[0].transcript).join(" "); setDraft(text); send(text); };
-    r.onend = () => setListening(false);
-    setListening(true);
-    r.start();
-  };
+  const speakRef = useRef<(text: string, l: Lang) => void>(() => {});
+  const voice = useVoice({ lang, onText: (text) => { setVoiceOn(true); voiceOnRef.current = true; sendRef.current(text); } });
+  speakRef.current = voice.speak;
+  const sendRef = useRef(send);
+  sendRef.current = send;
+  const listening = voice.mic === "listening";
 
   const playerTask = snap?.tasks.find((x) => x.id === player) ?? null;
   const vnow = snap ? new Date(snap.virtual_now) : null;
@@ -257,9 +256,15 @@ export default function Workspace({ persona }: { persona: Persona }) {
             ))}
           </div>
         )}
+        {voice.error && <div className="mic-error" role="alert" onClick={voice.clearError} data-testid="mic-error">{voice.error}</div>}
         <form className="composer" onSubmit={(e) => { e.preventDefault(); send(draft); }}>
-          <button type="button" className={`mic ${listening ? "on" : ""}`} onClick={mic} aria-label={t(lang, "talk")} title={t(lang, "talk")}>{listening ? "●" : "🎙"}</button>
-          <textarea value={draft} rows={1} placeholder={listening ? t(lang, "listening") : t(lang, "type")} onChange={(e) => setDraft(e.target.value)} data-testid="composer"
+          <button type="button" className={`mic ${voice.mic !== "idle" ? "on" : ""}`} onClick={voice.toggle} disabled={busy || voice.mic === "transcribing" || voice.mic === "requesting"}
+            aria-label={t(lang, "talk")} title={t(lang, "talk")} data-testid="mic" style={listening ? { boxShadow: `0 0 0 ${3 + voice.level * 10}px rgba(220, 38, 38, .25)` } : undefined}>
+            {voice.mic === "transcribing" || voice.mic === "requesting" ? "…" : listening ? "■" : "🎙"}
+          </button>
+          <button type="button" className={`mic ${voiceOn ? "on" : ""}`} onClick={() => { if (voiceOn) voice.stopSpeaking(); setVoiceOn(!voiceOn); }}
+            aria-label={t(lang, "voiceReplies")} title={t(lang, "voiceReplies")} aria-pressed={voiceOn} data-testid="voice-toggle">{voiceOn ? (voice.speaking ? "🔊" : "🔈") : "🔇"}</button>
+          <textarea value={draft} rows={1} placeholder={voice.mic === "transcribing" ? t(lang, "transcribing") : listening ? t(lang, "listening") : t(lang, "type")} onChange={(e) => setDraft(e.target.value)} data-testid="composer"
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(draft); } }} />
           <button className="btn primary" disabled={busy || !draft.trim()} data-testid="send">{t(lang, "send")}</button>
         </form>

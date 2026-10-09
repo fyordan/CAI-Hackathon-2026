@@ -24,6 +24,9 @@ const SERVICES: Record<Specialty, string[]> = {
   endocrinology: ["diabetes", "tiroides", "hormonas"],
   psychiatry: ["ansiedad", "depresión", "manejo de medicamentos", "telepsiquiatría"],
   dentistry: ["limpieza", "caries", "extracciones", "emergencia dental"],
+  neurology: ["migrañas", "neuropatía", "EEG / EMG", "mareos"],
+  urology: ["próstata", "infecciones urinarias", "piedras en el riñón"],
+  pulmonology: ["asma", "EPOC", "apnea del sueño", "espirometría"],
   urgent_care: ["urgencias", "suturas", "rayos X"],
 };
 
@@ -82,6 +85,7 @@ const FILL: [Specialty, string][] = [
   ["family_medicine", "Medicina de Familia"], ["pediatrics", "Pediatría"], ["orthopedics", "Ortopedia"], ["ophthalmology", "Centro de la Visión"],
   ["ent", "Otorrino"], ["gastroenterology", "Gastroenterología"], ["endocrinology", "Endocrinología"], ["psychiatry", "Salud Mental"],
   ["dentistry", "Dental"], ["urgent_care", "Urgencias"],
+  ["neurology", "Neurología"], ["urology", "Urología"], ["pulmonology", "Neumología"],
 ];
 
 function parseHours(h: string) {

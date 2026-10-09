@@ -30,16 +30,23 @@ export interface ScenarioCtx {
   currentText?: string;    // existing appointment (rebook/cancel)
 }
 
-const AUDIO: Record<string, { cues: typeof heroCues.cues; src: string }> = {
-  hero: { cues: heroCues.cues, src: "/calls/hero.mp3" },
-  rebook_hero: { cues: rebookCues.cues, src: "/calls/rebook.mp3" },
-  cancel_hero: { cues: cancelCues.cues, src: "/calls/cancel.mp3" },
+type Cue = { t: number; speaker: string; text: string | null; event: string | null };
+// pre_roll: seconds of ringing before the audio starts (ElevenLabs renders have no ring tone baked in)
+const AUDIO: Record<string, { cues: Cue[]; src: string; pre: number }> = {
+  hero: { cues: heroCues.cues, src: "/calls/hero.mp3", pre: (heroCues as { pre_roll?: number }).pre_roll ?? 0 },
+  rebook_hero: { cues: rebookCues.cues, src: "/calls/rebook.mp3", pre: (rebookCues as { pre_roll?: number }).pre_roll ?? 0 },
+  cancel_hero: { cues: cancelCues.cues, src: "/calls/cancel.mp3", pre: (cancelCues as { pre_roll?: number }).pre_roll ?? 0 },
 };
 
 function fromCues(name: keyof typeof AUDIO, effect: Record<string, unknown>): Step[] {
-  const { cues, src } = AUDIO[name];
-  const B = 1.2;
+  const { cues, src, pre } = AUDIO[name];
+  let B = 1.2;
   const steps: Step[] = [{ t: 0.3, state: "DIALING", speaker: "system", text: "Marcando…" }];
+  if (pre) {
+    steps.push({ t: B, state: "RINGING", speaker: "system", text: "Sonando…" });
+    B += pre;
+    steps.push({ t: B - 0.05, state: "HUMAN", speaker: "system", text: "Contestó una persona", payload: { audio: src, audio_start: true } });
+  }
   let negotiating = false;
   for (const c of cues) {
     if (c.event === "RINGING") steps.push({ t: B + c.t, state: "RINGING", speaker: "system", text: "Sonando…", payload: { audio: src, audio_start: true } });

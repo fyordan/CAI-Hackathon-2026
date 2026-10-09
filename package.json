@@ -8,7 +8,8 @@
     "start": "next start -p 3000",
     "db:setup": "tsx scripts/setup-db.ts",
     "test": "vitest run",
-    "tts": "python3 scripts/tts_calls.py"
+    "tts": "python3 scripts/tts_calls.py",
+    "voice:calls": "tsx --env-file=.env.local scripts/voice_calls.ts"
   },
   "dependencies": {
     "@fontsource/atkinson-hyperlegible": "^5",
