@@ -36,6 +36,8 @@ export async function resetDemo() {
   for (const s of HERO_SLOTS) {
     await q("INSERT INTO provider_slots (provider_id, starts_at, status, release_at) VALUES ($1,$2,$3,$4)", [s.provider_id, s.starts_at, s.status, s.release_at]);
   }
+  // live demo switches go back to off; turn them on again right before presenting
+  await q("UPDATE live_settings SET calls=false, whatsapp=false WHERE id=1");
   const offset = new Date(DEMO_START).getTime() - Date.now();
   await q("INSERT INTO demo_state (id, offset_ms) VALUES (1, $1) ON CONFLICT (id) DO UPDATE SET offset_ms = EXCLUDED.offset_ms", [offset]);
   return { providers: providers.length, slots: HERO_SLOTS.length };
