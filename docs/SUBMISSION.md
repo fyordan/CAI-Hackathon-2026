@@ -8,7 +8,7 @@ A platform where every provider shares its availability would solve this, but on
 
 **Cita Ya** ("your appointment, now") is a bilingual assistant that books doctor appointments by phone for you.
 
-1. **Ask once.** Talk or type, in Spanish or English. Describe the problem and it works out the specialist (an ingrown toenail means a podiatrist), along with your constraints: which days, a deadline, how far you'll drive, and your insurance plan.
+1. **Ask once.** Talk or type, in Spanish or English. Describe the problem, even if you don't know which doctor you need, and it works out the specialist along with your constraints: which days, how soon, how far you'll drive, and your insurance plan.
 2. **It finds.** It filters providers by specialty, plan, hours, language and drive time, and shows them on a map.
 3. **It calls and books.** It calls the shortlist in parallel. Each call is a spoken conversation with the receptionist, and code checks every slot they offer against your constraints before the AI accepts it. It retries busy lines, leaves voicemails and joins waitlists.
 4. **It keeps watching.** When an earlier opening appears, it calls back, moves you, and releases the old slot.

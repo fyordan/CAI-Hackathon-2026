@@ -1,29 +1,32 @@
 """Submission video with WhatsApp: the app recording (left, from `WHATSAPP=1 record.py submission`) beside a
-phone screen recording of the WhatsApp chat (right), cut to SEGS. The times below are for the 2026-10-10 take.
+phone screen recording of the WhatsApp chat (right), cut to SEGS. The times below are for the 2026-10-10 Diego take.
 Usage: APP=<submission.mp4> PHONE=<phone.mp4> WORK=<dir> python3 scripts/record/compose_whatsapp.py [out.mp4]"""
 import os, subprocess, sys
 FF = os.environ.get("FFMPEG", "ffmpeg")
 APP, PHONE, W = os.environ["APP"], os.environ["PHONE"], os.environ["WORK"]
 os.makedirs(f"{W}/seg", exist_ok=True)
-OFF = 6.9            # phone_t = app_t + OFF
-PH_END = 127.0       # last useful phone frame (calendar); later the phone shows other apps
-BANNER = (50.3, 57.7)  # another chat's notification: replaced with a clean frame
-SEGS = [(2.5, 13.6), (13.6, 22.8), (26.6, 32.5), (35.6, 38.4), (41.8, 50.1), (55.1, 56.9), (59.9, 64.0),
-        (70.0, 110.3), (110.3, 120.1), (120.1, 123.5), (131.0, 138.4), (149.5, 158.6), (159.2, 164.0)]
+OFF = 1.7            # phone_t = app_t + OFF (phone recording started 1.7 s before the app video)
+PH_END = 181.0       # end of the phone recording
+HIDE = [(0, 12.6, 13.0), (88.4, 95.6, 88.0)]  # (from, to, still at): Control Center at the start, the phone rotating
+SEGS = [(2.3, 14.0), (14.0, 26.2), (30.0, 36.9), (40.4, 44.0), (47.4, 54.0), (59.2, 60.6), (63.9, 68.0),
+        (73.5, 107.5), (107.5, 110.8), (117.5, 121.0), (128.5, 136.0), (143.5, 152.3), (153.0, 162.6), (167.0, 170.0)]
 PW, PH = 332, 720
 FONT = "/System/Library/Fonts/SFNS.ttf"
 run = lambda *a: subprocess.run([FF, "-y", "-loglevel", "error", *a], check=True)
 
-# 1. phone track normalized to 25 fps, panel size, banner removed
+# 1. phone track normalized to 25 fps and panel size, with HIDE spans covered by a still frame taken just before
+#    (overlaying keeps the timeline intact)
 clean = f"{W}/phone_clean.mp4"
 if not os.path.exists(clean):
-    a, b = BANNER
-    run("-i", PHONE, "-filter_complex",
-        f"[0:v]fps=25,scale={PW}:{PH},split=3[p1][p2][p3];"
-        f"[p1]trim=0:{a},setpts=PTS-STARTPTS[x];"
-        f"[p2]trim={a-0.4}:{a-0.36},setpts=PTS-STARTPTS,tpad=stop_mode=clone:stop_duration={b-a}[y];"
-        f"[p3]trim={b},setpts=PTS-STARTPTS[z];[x][y][z]concat=n=3:v=1[v]",
-        "-map", "[v]", "-an", "-c:v", "libx264", "-crf", "16", "-preset", "fast", clean)
+    stills, chain, last = [], [], "[base]"
+    for k, (a, b, still_at) in enumerate(HIDE):
+        png = f"{W}/still{k}.png"
+        run("-ss", f"{still_at}", "-i", PHONE, "-frames:v", "1", "-vf", f"scale={PW}:{PH}", png)
+        stills += ["-i", png]
+        chain.append(f"{last}[{k + 1}:v]overlay=0:0:enable='between(t,{a},{b})'[o{k}]")
+        last = f"[o{k}]"
+    run("-i", PHONE, *stills, "-filter_complex", f"[0:v]fps=25,scale={PW}:{PH}[base];" + ";".join(chain),
+        "-map", last, "-an", "-c:v", "libx264", "-crf", "16", "-preset", "fast", clean)
 
 label = f"drawtext=fontfile={FONT}:text='WhatsApp on a real phone':fontcolor=0xE5E7EB:fontsize=20:x=1280+(420-tw)/2:y=20"
 parts = []
