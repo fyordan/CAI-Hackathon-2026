@@ -67,6 +67,7 @@ export interface Persona {
   name: string;
   age: number;
   blurb: string;
+  need?: string;                // one line shown on the persona picker
   lang: Lang;
   home: Place;
   work: Place | null;

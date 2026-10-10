@@ -42,13 +42,12 @@ export default function MapView({ persona, candidates, hovered, onHover, lang, b
       const lf = await import("leaflet");
       if (dead || !el.current || map.current) return;
       L.current = lf;
-      const m = lf.map(el.current, { zoomControl: true, attributionControl: true, zoomSnap: 0.25, minZoom: 8, maxZoom: 15 });
-      m.attributionControl.setPrefix(false).addAttribution("Outline: Natural Earth · Offline demo basemap");
+      const m = lf.map(el.current, { zoomControl: true, attributionControl: false, zoomSnap: 0.25, minZoom: 8, maxZoom: 15 });
       m.setView([18.22, -66.45], 9);
       const geo = await fetch("/pr.geo.json").then((r) => r.json());
-      lf.geoJSON(geo, { style: { color: "#9FB3C2", weight: 1, fillColor: "#FFFFFF", fillOpacity: 1 }, interactive: false }).addTo(m);
+      lf.geoJSON(geo, { style: { color: "#3E5F75", weight: 1.5, fillColor: "#FFFFFF", fillOpacity: 1 }, interactive: false }).addTo(m);
       for (const [name, lat, lng] of TOWNS) {
-        lf.marker([lat, lng], { interactive: false, icon: lf.divIcon({ className: "town", html: `<span>${name}</span>`, iconSize: [0, 0] }) }).addTo(m);
+        lf.marker([lat, lng], { interactive: false, zIndexOffset: -1000, icon: lf.divIcon({ className: "town", html: `<span>${name}</span>`, iconSize: [0, 0] }) }).addTo(m);
       }
       const pin = (cls: string, glyph: string, label: string) => lf.divIcon({ className: `origin ${cls}`, html: `<span class="origin-dot">${glyph}</span><span class="origin-label">${label}</span>`, iconSize: [28, 28], iconAnchor: [14, 14] });
       lf.marker([persona.home.lat, persona.home.lng], { icon: pin("home", "⌂", persona.home.label.split("·")[0].trim()), zIndexOffset: -100 }).addTo(m);
@@ -126,7 +125,7 @@ export default function MapView({ persona, candidates, hovered, onHover, lang, b
     const c = candidates.find((x) => x.id === hovered);
     if (c && c.best_origin) {
       const o = c.best_origin === "work" && persona.work ? persona.work : persona.home;
-      line.current = lf.polyline([[o.lat, o.lng], [c.lat, c.lng]], { color: "#2F5D7C", weight: 2, dashArray: "4 6" }).addTo(m);
+      line.current = lf.polyline([[o.lat, o.lng], [c.lat, c.lng]], { color: "#0B1A24", weight: 3, dashArray: "6 6" }).addTo(m);
     }
   }, [hovered, candidates, persona, ready]);
 

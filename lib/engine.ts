@@ -14,7 +14,8 @@ import { openrouterConfigured } from "./ai/openrouter";
 import { elevenConfigured } from "./voice/elevenlabs";
 import { buildIcs, googleConfigured, pushToGoogle, type InviteInput } from "./calendar";
 import { decideRebook } from "./rebook";
-import { getPersona, INSURERS } from "./personas";
+import { INSURERS } from "./personas";
+import { loadPersona } from "./profiles";
 import { searchProviders, SHORTLIST_SIZE } from "./search";
 import { emptyQuery, SPECIALTY_LABEL, type Candidate, type Lang, type Persona, type Provider, type ProviderQuery } from "./types";
 
@@ -25,7 +26,7 @@ export const getRequest = (id: string) => one<RequestRow>("SELECT * FROM care_re
 const today = async () => localDate((await virtualNow()).toISOString());
 
 export async function createRequest(personaId: string) {
-  const p = getPersona(personaId);
+  const p = await loadPersona(personaId);
   const query: ProviderQuery = { ...emptyQuery(), insurance: p.insurance, patient_is_requester: !p.patient };
   const hello = p.lang === "en"
     ? `Hi ${p.name.split(" ")[0]}. Tell me what's going on and when you can go. I'll find offices near you and call them for you.`
@@ -40,7 +41,7 @@ export async function createRequest(personaId: string) {
 export async function chatTurn(requestId: string, text: string): Promise<{ turn: TurnResult; shortlist: Candidate[]; persona: Persona }> {
   const r = await getRequest(requestId);
   if (!r) throw new Error("request not found");
-  const persona = getPersona(r.persona_id);
+  const persona = await loadPersona(r.persona_id);
   const firstUser = r.messages.find((m) => m.role === "user")?.text ?? text;
   const convLang: Lang = persona.lang === "en" || detectLang(firstUser) === "en" ? "en" : "es";
   // only "ready" if the last list actually had offices to call (a no-fit list asked a different question)
@@ -197,7 +198,7 @@ export async function startCalls(requestId: string) {
   if (!r) throw new Error("request not found");
   const existing = await one("SELECT id FROM call_tasks WHERE request_id=$1 AND purpose='book' LIMIT 1", [requestId]);
   if (existing) return;
-  const persona = getPersona(r.persona_id);
+  const persona = await loadPersona(r.persona_id);
   const lang: Lang = persona.lang;
   const day0 = await today();
   const list = r.shortlist.filter((c) => c.included).slice(0, SHORTLIST_SIZE);
@@ -250,7 +251,7 @@ export async function tick(requestId: string) {
 async function inviteFor(apptId: string): Promise<InviteInput & { delivery: string }> {
   const a = await one<{ id: string; starts_at: Date; calendar_seq: number; status: string; name: string; address: string; phone: string; persona_id: string; specialty: string }>(
     `SELECT a.*, p.name, p.address, p.phone, p.specialty, r.persona_id FROM appointments a JOIN providers p ON p.id=a.provider_id JOIN care_requests r ON r.id=a.request_id WHERE a.id=$1`, [apptId]);
-  const persona = getPersona(a!.persona_id);
+  const persona = await loadPersona(a!.persona_id);
   const who = persona.patient?.name ?? persona.name;
   const spec = SPECIALTY_LABEL[a!.specialty as keyof typeof SPECIALTY_LABEL].es;
   const inv: InviteInput = {
@@ -287,7 +288,7 @@ async function notify(requestId: string, kind: string, text: string, payload: Re
 async function applyEffect(requestId: string, callId: string, effect: string, payload: Record<string, unknown>) {
   const call = await one<{ provider_id: string; appointment_id: string | null }>("SELECT provider_id, appointment_id FROM call_tasks WHERE id=$1", [callId]);
   const r = await getRequest(requestId);
-  const lang: Lang = getPersona(r!.persona_id).lang;
+  const lang: Lang = (await loadPersona(r!.persona_id)).lang;
   if (effect === "book") {
     const startsAt = payload.starts_at as string;
     const client = await pool.connect();
@@ -341,7 +342,7 @@ export async function rebookScan(requestId: string) {
   const r = await getRequest(requestId);
   const appt = await one<{ id: string; provider_id: string; starts_at: Date }>("SELECT a.* FROM appointments a JOIN watchers w ON w.appointment_id=a.id WHERE a.request_id=$1 AND a.status='booked' AND w.active", [requestId]);
   if (!r || !appt) return { action: "none", reason: "no_active_watch" };
-  const persona = getPersona(r.persona_id);
+  const persona = await loadPersona(r.persona_id);
   const lang = persona.lang;
   const now = await virtualNow();
   // offices release cancelled appointments over time (seeded "truth"; the agent finds them by calling)
@@ -375,7 +376,7 @@ export async function cancelAppointment(requestId: string) {
   if (!r || !appt) throw new Error("no booked appointment");
   const pending = await one("SELECT id FROM call_tasks WHERE appointment_id=$1 AND purpose='cancel' AND state NOT IN ('COMPLETED','GAVE_UP')", [appt.id]);
   if (pending) return; // idempotent
-  const persona = getPersona(r.persona_id);
+  const persona = await loadPersona(r.persona_id);
   const iso = new Date(appt.starts_at).toISOString();
   // the pre-rendered audio says "jueves 29 de octubre", so only use it when that is the date being cancelled
   const hero = persona.id === "marisol" && appt.provider_id === "pod-hatorey" && localDate(iso) === "2026-10-29";

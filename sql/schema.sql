@@ -66,3 +66,6 @@ CREATE TABLE IF NOT EXISTS notifications (
 CREATE TABLE IF NOT EXISTS audio_clips (
   id text PRIMARY KEY, mime text NOT NULL DEFAULT 'audio/mpeg', data bytea NOT NULL,
   meta jsonb, created_at timestamptz NOT NULL DEFAULT now());
+
+-- Edited/created demo personas (lib/profiles.ts). Built-ins stay in code; not truncated by demo reset.
+CREATE TABLE IF NOT EXISTS personas (id text PRIMARY KEY, data jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now());

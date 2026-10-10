@@ -62,7 +62,6 @@ export default function Workspace({ persona }: { persona: Persona }) {
   const [voiceOn, setVoiceOn] = useState(false);
   const voiceOnRef = useRef(false);
   voiceOnRef.current = voiceOn;
-  const [engine, setEngine] = useState<string>("rules");
   const [freshKeys, setFreshKeys] = useState<Set<string>>(new Set());
   const seenNotes = useRef<number>(-1);
   const autoOpened = useRef<Set<string>>(new Set());
@@ -145,7 +144,7 @@ export default function Workspace({ persona }: { persona: Persona }) {
       buf = rest;
       for (const { event, data } of out) {
         const d = JSON.parse(data);
-        if (event === "meta") { setEngine(d.engine); if (d.lang) replyLang = d.lang; }
+        if (event === "meta" && d.lang) replyLang = d.lang;
         if (event === "patch") {
           setLiveQuery(d.query);
           const keys = Object.keys(d.patch);
@@ -224,17 +223,18 @@ export default function Workspace({ persona }: { persona: Persona }) {
         <a href="/" className="brand small"><span className="brand-mark" aria-hidden>✚</span> CitaYa</a>
         <div className="who">
           <strong>{persona.name}</strong>
-          <span>{persona.patient ? `${t(lang, "patientFor")} ${persona.patient.name} · ` : ""}{INSURERS[persona.insurance].name}</span>
+          <span>{persona.patient ? `${t(lang, "patientFor")} ${persona.patient.name} · ` : ""}{persona.home.label.split("·").pop()?.trim()} · {INSURERS[persona.insurance]?.name}</span>
         </div>
         <div className="head-actions">
-          <span className="clock" title={t(lang, "demoTime")} data-testid="clock">{clock} <em>{t(lang, "demoTime")}</em></span>
+          <span className="clock" title={t(lang, "demoTime")} data-testid="clock">{clock}</span>
           {appt?.status === "booked" && <button className="btn" onClick={fastForward} data-testid="fast-forward">⏩ <span className="hide-sm">{t(lang, "ff")}</span><span className="show-sm">+3d</span></button>}
+          <a className="btn ghost hide-sm" href={`/profile/${persona.id}`} data-testid="profile">{t(lang, "profile")}</a>
           <button className="btn ghost" onClick={() => setShowReal(true)} data-testid="whats-real">{t(lang, "real")}</button>
           <button className="btn ghost hide-sm" onClick={reset}>{t(lang, "reset")}</button>
         </div>
       </header>
 
-      <QueryBar query={query} expecting={snap?.request.expecting ?? null} lang={lang} persona={persona} fresh={freshKeys} engine={engine} />
+      <QueryBar query={query} expecting={snap?.request.expecting ?? null} lang={lang} persona={persona} fresh={freshKeys} />
 
       <section className="pane pane-chat" data-pane="chat">
         <div className="messages" data-testid="messages">
@@ -242,7 +242,7 @@ export default function Workspace({ persona }: { persona: Persona }) {
             <div key={i} className={`msg ${m.role} ${m.kind === "emergency" ? "emergency" : ""}`}>{m.text}</div>
           ))}
           {!calling && status === "ready" && included.length > 0 && (
-            <div className="msg-cta">
+            <div className="msg-cta show-sm-flex">
               <button className="btn primary" onClick={startCalls} data-testid="call-all">📞 {t(lang, "callAll", { n: Math.min(5, included.length) })}</button>
             </div>
           )}
@@ -260,10 +260,10 @@ export default function Workspace({ persona }: { persona: Persona }) {
         <form className="composer" onSubmit={(e) => { e.preventDefault(); send(draft); }}>
           <button type="button" className={`mic ${voice.mic !== "idle" ? "on" : ""}`} onClick={voice.toggle} disabled={busy || voice.mic === "transcribing" || voice.mic === "requesting"}
             aria-label={t(lang, "talk")} title={t(lang, "talk")} data-testid="mic" style={listening ? { boxShadow: `0 0 0 ${3 + voice.level * 10}px rgba(220, 38, 38, .25)` } : undefined}>
-            {voice.mic === "transcribing" || voice.mic === "requesting" ? "…" : listening ? "■" : "🎙"}
+            {voice.mic === "transcribing" || voice.mic === "requesting" ? <Icon d={I.dots} /> : listening ? <Icon d={I.stop} /> : <Icon d={I.mic} />}
           </button>
           <button type="button" className={`mic ${voiceOn ? "on" : ""}`} onClick={() => { if (voiceOn) voice.stopSpeaking(); setVoiceOn(!voiceOn); }}
-            aria-label={t(lang, "voiceReplies")} title={t(lang, "voiceReplies")} aria-pressed={voiceOn} data-testid="voice-toggle">{voiceOn ? (voice.speaking ? "🔊" : "🔈") : "🔇"}</button>
+            aria-label={t(lang, "voiceReplies")} title={t(lang, "voiceReplies")} aria-pressed={voiceOn} data-testid="voice-toggle"><Icon d={voiceOn ? I.speaker : I.muted} /></button>
           <textarea value={draft} rows={1} placeholder={voice.mic === "transcribing" ? t(lang, "transcribing") : listening ? t(lang, "listening") : t(lang, "type")} onChange={(e) => setDraft(e.target.value)} data-testid="composer"
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(draft); } }} />
           <button className="btn primary" disabled={busy || !draft.trim()} data-testid="send">{t(lang, "send")}</button>
@@ -275,7 +275,6 @@ export default function Workspace({ persona }: { persona: Persona }) {
         <div className="map-legend">
           <span><i className="lg in" /> {lang === "es" ? "Cumple" : "Fits"}</span>
           <span><i className="lg out" /> {lang === "es" ? "No cumple" : "Doesn't fit"}</span>
-          <span className="badge-est">{lang === "es" ? "Tiempos aproximados · mapa offline" : "Approx. drive times · offline map"}</span>
         </div>
       </section>
 
@@ -292,7 +291,7 @@ export default function Workspace({ persona }: { persona: Persona }) {
           {panel === "calls" && (
             <div className="calls" data-testid="calls">
               {!snap?.tasks.length && <p className="empty">{t(lang, "noCalls")}</p>}
-              {bookCalls.length > 0 && <div className="calls-summary"><span className="tag tag-simulated">{lang === "es" ? "Llamadas simuladas" : "Simulated calls"}</span> {t(lang, "summary", tally)}</div>}
+              {bookCalls.length > 0 && <div className="calls-summary">{t(lang, "summary", tally)}</div>}
               {[...otherCalls.slice().reverse(), ...bookCalls].map((tk) => {
                 const last = lastLine(tk);
                 const oc = outcome(tk);
@@ -367,10 +366,10 @@ export default function Workspace({ persona }: { persona: Persona }) {
 }
 
 // ───────────────────────── query bar ─────────────────────────
-function QueryBar({ query, expecting, lang, persona, fresh, engine }: { query: ProviderQuery | null; expecting: string | null; lang: Lang; persona: Persona; fresh: Set<string>; engine: string }) {
+function QueryBar({ query, expecting, lang, persona, fresh }: { query: ProviderQuery | null; expecting: string | null; lang: Lang; persona: Persona; fresh: Set<string> }) {
   if (!query) return <div className="querybar" />;
   const chips: { key: string; keys: string[]; label: string; sub?: string; strong?: boolean }[] = [];
-  if (query.specialty) chips.push({ key: "sp", keys: ["specialty"], label: `${SPECIALTY_LABEL[query.specialty].icon} ${SPECIALTY_LABEL[query.specialty][lang]}`, sub: query.specialty_confidence ? `${Math.round(query.specialty_confidence * 100)}%` : undefined, strong: true });
+  if (query.specialty) chips.push({ key: "sp", keys: ["specialty"], label: `${SPECIALTY_LABEL[query.specialty].icon} ${SPECIALTY_LABEL[query.specialty][lang]}`, strong: true });
   if (persona.patient) chips.push({ key: "pt", keys: ["patient_is_requester"], label: `${t(lang, "patientFor")} ${persona.patient.name}` });
   if (query.days_of_week.length) chips.push({ key: "days", keys: ["days_of_week"], label: query.days_of_week.length === 5 ? (lang === "es" ? "Entre semana" : "Weekdays") : query.days_of_week.map((d) => DAY_NAME[d][lang]).join(", ").replace(/^./, (c) => c.toUpperCase()) });
   const latest = effectiveLatest(query);
@@ -389,7 +388,6 @@ function QueryBar({ query, expecting, lang, persona, fresh, engine }: { query: P
   }
   return (
     <div className="querybar" data-testid="querybar">
-      <div className="qb-top"><span className="qb-label">{t(lang, "searching")}</span><span className="engine" title={engine === "rules" ? "Offline rule-based parser; no LLM in this run" : "OpenRouter model"}>{engine === "rules" ? (lang === "es" ? "Parser offline · sin LLM" : "Offline parser · no LLM") : "LLM"}</span></div>
       <div className="chips">
         {chips.map((c) => (
           <span key={c.key + c.label} className={`chip ${c.strong ? "strong" : ""} ${c.keys.some((k) => fresh.has(k)) ? "fresh" : ""}`} data-testid={`chip-${c.key}`}>
@@ -409,23 +407,22 @@ function ShortList({ list, lang, query, hovered, onHover, canCall, onCall }: { l
   if (!list.length) return <p className="empty">{t(lang, "emptyList")}</p>;
   return (
     <div className="shortlist" data-testid="shortlist">
-      <div className="list-note"><span className="tag tag-synthetic">{lang === "es" ? "Directorio sintético" : "Synthetic directory"}</span> {lang === "es" ? "Disponibilidad desconocida hasta llamar." : "Availability unknown until called."}</div>
-      <ol>
+      {!inc.length && <p className="empty">{lang === "es" ? "Ninguna oficina cumple todavía. Prueba con más minutos de manejo u otros días." : "No office fits yet. Try a longer drive or other days."}</p>}
+      {inc.length > 0 && <ol>
         {inc.map((c) => (
           <li key={c.id} className={`cand ${hovered === c.id ? "hover" : ""} ${c.rank! > 5 ? "beyond" : ""}`} onMouseEnter={() => onHover(c.id)} onMouseLeave={() => onHover(null)} data-testid="candidate">
             <span className="rank">{c.rank}</span>
             <div className="cand-body">
               <div className="cand-top"><strong>{c.name}</strong><span className="cand-town">{c.municipio}</span></div>
               <div className="cand-drive">
-                {c.drive_home_min != null && <span className={c.best_origin === "home" ? "best" : ""}>⌂ {c.drive_home_min} min</span>}
-                {c.drive_work_min != null && <span className={c.best_origin === "work" ? "best" : ""}>▣ {c.drive_work_min} min</span>}
+                {c.drive_home_min != null && <span className={c.best_origin === "home" ? "best" : ""}><span aria-hidden>⌂</span> {c.drive_home_min} min <span className="sr-only">{t(lang, "fromHome")}</span></span>}
+                {c.drive_work_min != null && <span className={c.best_origin === "work" ? "best" : ""}><span aria-hidden>▣</span> {c.drive_work_min} min <span className="sr-only">{t(lang, "fromWork")}</span></span>}
               </div>
-              <div className="cand-meta">{hoursOn(c.hours, query?.days_of_week ?? [], lang)} · {c.languages.map((l) => l.toUpperCase()).join("/")}{c.wheelchair ? " · ♿" : ""}</div>
-              <div className="cand-meta">{c.services.slice(0, 2).join(" · ")} · {c.phone}</div>
+              <div className="cand-meta">{hoursOn(c.hours, query?.days_of_week ?? [], lang)} · {c.languages.map((l) => l.toUpperCase()).join("/")}{c.wheelchair ? " · ♿" : ""} · {c.phone}</div>
             </div>
           </li>
         ))}
-      </ol>
+      </ol>}
       {out.length > 0 && (
         <details className="excluded">
           <summary>{t(lang, "excluded", { n: out.length })}</summary>
@@ -461,10 +458,10 @@ function Booking({ snap, lang, persona, reqId, onCancel }: { snap: Snapshot | nu
       </dl>
       {cal && (
         <div className="invite">
-          <div className="invite-k">📅 {t(lang, "invite")} · <span className="tag tag-off">{lang === "es" ? "Google no conectado" : "Google not connected"}</span></div>
+          <div className="invite-k">📅 {t(lang, "invite")}</div>
           <p>{cancelled
             ? (lang === "es" ? `Cancelación lista para ${cal.attendee} (versión ${cal.sequence}).` : `Cancellation ready for ${cal.attendee} (version ${cal.sequence}).`)
-            : (lang === "es" ? `Invitación para ${cal.attendee}, versión ${cal.sequence}. En este demo no se envía email: descarga el .ics y ábrelo en tu calendario.` : `Invite for ${cal.attendee}, version ${cal.sequence}. No email is sent in this demo: download the .ics and open it in your calendar.`)}</p>
+            : (lang === "es" ? `Para ${cal.attendee}. En este demo no se envía email.` : `For ${cal.attendee}. No email is sent in this demo.`)}</p>
           <a className="btn" href={`/api/requests/${reqId}/ics`} data-testid="ics">{t(lang, "downloadIcs")}</a>
         </div>
       )}
@@ -476,4 +473,16 @@ function Booking({ snap, lang, persona, reqId, onCancel }: { snap: Snapshot | nu
       )}
     </div>
   );
+}
+
+// ───────────────────────── icons ─────────────────────────
+const I = {
+  mic: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3",
+  stop: "M7 7h10v10H7z",
+  dots: "M6 12h.01M12 12h.01M18 12h.01",
+  speaker: "M4 9v6h4l5 4V5L8 9H4zM16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12",
+  muted: "M4 9v6h4l5 4V5L8 9H4zM17 9l5 6M22 9l-5 6",
+};
+function Icon({ d }: { d: string }) {
+  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={d} /></svg>;
 }

@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   title: "CitaYa PR (demo)",
   description: "Describe what you need; an agent finds Puerto Rico offices that fit and calls them for you. Hackathon demo with simulated calls and a synthetic directory.",
 };
-export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#2F5D7C" };
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#1B4D72" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

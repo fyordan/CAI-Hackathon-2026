@@ -37,6 +37,7 @@ const D = {
   keep: { es: "Mantener cita", en: "Keep it" },
   ff: { es: "Adelantar 3 días", en: "Skip ahead 3 days" },
   real: { es: "Qué es real", en: "What's real" },
+  profile: { es: "Perfil", en: "Profile" },
   reset: { es: "Reiniciar", en: "Reset" },
   demoTime: { es: "hora demo", en: "demo time" },
   noAppt: { es: "Todavía no hay cita. Cuando una llamada confirme, aparece aquí con su invitación.", en: "No booking yet. When a call confirms, it shows up here with its invite." },
