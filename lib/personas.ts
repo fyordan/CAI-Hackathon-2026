@@ -17,6 +17,24 @@ export const PERSONAS: Persona[] = [
   {
     id: "marisol",
     name: "Marisol Rivera",
+    age: 38,
+    blurb: "Delivery truck driver in Bayamón, booking for her son Diego (7). English.",
+    need: "Pediatric dermatologist for Diego's eczema, Fridays only (her day off), as soon as possible, ≤25 min from home",
+    lang: "en",
+    home: { label: "Home · Bayamón", lat: 18.3989, lng: -66.1557 },
+    work: null, // on a delivery route all day
+    insurance: "mmm-vital",
+    email: "marisol.demo@example.com",
+    patient: { name: "Diego Rivera", age: 7, relation: "son" },
+    // the deck's story: she can't be on the phone during her route, and offices are closed when it ends
+    suggested: [
+      "My son Diego's eczema keeps spreading and the pharmacy creams stopped working. He needs a pediatric dermatologist. I drive a delivery truck all day, so Friday is the only day I can take him.",
+      "As soon as possible, and no more than twenty-five minutes from home.",
+    ],
+  },
+  {
+    id: "carmen",
+    name: "Carmen Ortiz",
     age: 41,
     blurb: "Accountant. Lives in Caguas, works in Hato Rey. English.",
     need: "A painful ingrown toenail, Thursdays only, before Thanksgiving, ≤30 min from home or work",
@@ -24,7 +42,7 @@ export const PERSONAS: Persona[] = [
     home: { label: "Home · Caguas", lat: 18.2385, lng: -66.026 },
     work: { label: "Work · Hato Rey", lat: 18.4225, lng: -66.059 },
     insurance: "triple-s",
-    email: "marisol.demo@example.com",
+    email: "carmen.demo@example.com",
     // no specialty named on purpose: the assistant infers podiatry from the symptom
     suggested: [
       "I have an ingrown toenail that's really hurting. I can only go on Thursdays, and I need it taken care of before Thanksgiving because I'll be away for two weeks.",

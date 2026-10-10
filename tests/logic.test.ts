@@ -11,7 +11,7 @@ import { decideRebook } from "@/lib/rebook";
 import { buildGoogleEvent, buildIcs } from "@/lib/calendar";
 import { emptyQuery, type ProviderQuery } from "@/lib/types";
 
-const marisol = getPersona("marisol");
+const marisol = getPersona("carmen"); // the podiatry case: Caguas home, Hato Rey work
 const MQ: ProviderQuery = { ...emptyQuery(), specialty: "podiatry", days_of_week: ["thu"], latest_date: "2026-11-25", max_drive_min: 30, drive_origins: ["home", "work"], insurance: "triple-s" };
 
 describe("dates", () => {
@@ -96,7 +96,7 @@ describe("calendar", () => {
 
 describe("island offices stay out of the scripted demos", () => {
   // persona → specialty it demos and the drive limit it asks for, plus a few minutes of margin
-  const guard = [["marisol", "podiatry", 35], ["yadira", "cardiology", 30], ["javi", "dermatology", 45], ["javi", "gastroenterology", 35], ["ana", "ob_gyn", 25]] as const;
+  const guard = [["carmen", "podiatry", 35], ["marisol", "dermatology", 30], ["yadira", "cardiology", 30], ["javi", "dermatology", 45], ["javi", "gastroenterology", 35], ["ana", "ob_gyn", 25]] as const;
   it.each(guard)("%s never sees an added %s office", (id, sp, min) => {
     const p = getPersona(id);
     for (const r of ISLAND.filter((x) => x[2] === sp)) {

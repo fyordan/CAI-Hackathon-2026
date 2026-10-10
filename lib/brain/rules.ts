@@ -77,6 +77,8 @@ const KW: Record<Specialty, [RegExp, number][]> = {
 };
 const CHILD = /\b(mi nena|mi nene|mi hij[oa]|mi bebe|my (son|daughter|kid|child|baby))\b|\b([1-9]|1[0-7]) (anos|years? old)\b/;
 
+const PEDS_SUB = /pediatric\w* (dermat|cardio|neuro|gastro|endocrin|ortho|ophthalm|urolog|pulmon|psychiatr)|(dermatolog|cardiolog|neurolog|gastroenterolog|endocrinolog|ortoped|oftalmolog|urolog|neumolog|psiquiatr)\w* pediatric/;
+
 export interface Triage { specialty: Specialty | null; confidence: number; alternatives: Specialty[]; child: boolean }
 export function triage(text: string): Triage {
   const t = norm(text);
@@ -93,7 +95,12 @@ export function triage(text: string): Triage {
   let [top, topScore] = ranked[0];
   const second = ranked[1]?.[1] ?? 0;
   const alternatives = ranked.slice(1, 3).map(([s]) => s);
-  if (child && top !== "pediatrics" && top !== "dentistry") {
+  // "pediatric dermatologist" / "dermatólogo pediátrico": the subspecialty, not general pediatrics
+  const sub = PEDS_SUB.test(t) ? ranked.find(([s]) => s !== "pediatrics") : undefined;
+  if (sub) {
+    [top, topScore] = sub;
+    alternatives.splice(0, alternatives.length, ...ranked.filter(([s]) => s !== top).map(([s]) => s));
+  } else if (child && top !== "pediatrics" && top !== "dentistry") {
     alternatives.unshift(top);
     top = "pediatrics";
   }

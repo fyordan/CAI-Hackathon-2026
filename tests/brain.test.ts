@@ -5,7 +5,7 @@ import { getPersona } from "@/lib/personas";
 import { emptyQuery, type ProviderQuery } from "@/lib/types";
 
 const TODAY = "2026-10-09";
-const marisol = getPersona("marisol");
+const marisol = getPersona("carmen"); // the podiatry case: Caguas home, Hato Rey work
 
 describe("triage: symptom → specialty (ES / EN / Spanglish)", () => {
   const cases: [string, string, string?][] = [
@@ -108,6 +108,15 @@ describe("ask vs search", () => {
     const r = await runTurn({ text: marisol.suggested[1], today: TODAY, persona: marisol, query: first.query, expecting: first.expecting, convLang: "es" });
     expect(r.action).toBe("search");
     expect(r.query).toMatchObject({ specialty: "podiatry", days_of_week: ["thu"], max_drive_min: 30, insurance: "triple-s" });
+  });
+  it("Diego's story: a pediatric dermatologist is dermatology, Fridays, asap, 25 min from home", async () => {
+    const m = getPersona("marisol");
+    expect(triage(m.suggested[0]).specialty).toBe("dermatology");
+    expect(triage("Mi nene necesita un dermatólogo pediátrico").specialty).toBe("dermatology");
+    const first = await runTurn({ text: m.suggested[0], today: TODAY, persona: m, query: emptyQuery(), expecting: null });
+    const r = await runTurn({ text: m.suggested[1], today: TODAY, persona: m, query: first.query, expecting: first.expecting, convLang: "en" });
+    expect(r.action).toBe("search");
+    expect(r.query).toMatchObject({ specialty: "dermatology", days_of_week: ["fri"], asap: true, max_drive_min: 25, insurance: "mmm-vital" });
   });
   it("Spanglish conversation keeps answering in Spanish", async () => {
     const r = await runTurn({ text: "Max 40 minutos from either", today: TODAY, persona: getPersona("javi"), query: { ...emptyQuery(), specialty: "dermatology", asap: true }, expecting: "drive", convLang: "es" });

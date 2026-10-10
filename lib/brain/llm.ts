@@ -67,7 +67,7 @@ Return JSON:
 - intent: "confirm_call" if they approve calling/booking ("sí", "dale", "llámalos", "go ahead", "yes please"), "decline_call" if they say not yet/no, "info" if they give or change details, "chitchat" for greetings/thanks, "off_topic" otherwise.
 - reply_lang: "${input.replyLang ?? "es"}" (fixed).
 - Search fields: return a value ONLY when the latest message (read with the conversation context) states or changes it; otherwise null. A non-null value REPLACES the current one (e.g. "Wednesdays instead of Thursdays" → ["wed"]).
-  specialty: one of ${specs}. Pick the specialist a patient would book for the complaint (migraine → neurology; child → pediatrics unless dental; general checkup → family_medicine). alternatives: up to 2 other plausible ones.
+  specialty: one of ${specs}. Pick the specialist a patient would book for the complaint (migraine → neurology; child → pediatrics unless dental or they ask for a pediatric subspecialist (pediatric dermatologist → dermatology); general checkup → family_medicine). alternatives: up to 2 other plausible ones.
   latest_date: last acceptable day, inclusive ("before Nov 20" → the 19th; "antes de Thanksgiving" → day before Thanksgiving; "in two weeks" → today+14). earliest_date only if they say "not before"/"next week" (next week = its Monday). deadline_label: the user's words for the deadline, short.
   asap: true for "lo antes posible"/"as soon as possible"/"earliest"/"whenever you can find".
   time_windows: 24h "HH:MM" local, e.g. mornings → 07:00-12:00, afternoons → 12:00-17:00, "after 4" → 16:00-18:00, "before 9" → 07:00-09:00.

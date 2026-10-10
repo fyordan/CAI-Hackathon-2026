@@ -320,16 +320,16 @@ def mark(name):
 MARISOL = {"voice": "EXAVITQu4vr4xnSDxMaL", "lang": "en"}  # premade English female voice
 
 def submission(pg):
-    """The ≤2 min submission video: English Marisol on production, voice only. She describes the symptom
-    (no specialty), CitaYa infers podiatry, calls offices in parallel, books, then moves it earlier."""
+    """The ≤2 min submission video: English Marisol on production, voice only. She books a pediatric
+    dermatologist for her son Diego; CitaYa calls offices in parallel, books, then moves it earlier."""
     pg.goto(BASE); pg.wait_for_timeout(2500)
     if WHATSAPP:
         click(pg, "[data-testid=live-settings] summary", 900)
         click(pg, "[data-testid=live-whatsapp]", 1800)
         click(pg, "[data-testid=live-settings] summary", 600)
     click(pg, "[data-testid=persona-marisol]", 2000)
-    talk(pg, "I have an ingrown toenail that's really hurting. I can only go on Thursdays, and I need it taken care of before Thanksgiving because I'll be away for two weeks.", 1000, **MARISOL)
-    talk(pg, "Thirty minutes, from home or from work.", 600, **MARISOL)
+    talk(pg, "My son Diego's eczema keeps spreading and the pharmacy creams stopped working. He needs a pediatric dermatologist. I drive a delivery truck all day, so Friday is the only day I can take him.", 1000, **MARISOL)
+    talk(pg, "As soon as possible, and no more than twenty-five minutes from home.", 600, **MARISOL)
     for i in range(2):
         hover(pg, f"[data-testid=candidate] >> nth={i}", 900)
     talk(pg, "Yes, please call them.", 200, **MARISOL)
