@@ -74,6 +74,7 @@ def main():
         if "voice" in FLOW or FLOW == "submission": ctx.add_init_script(VOICE)
         pg = ctx.new_page()
         t0 = time.time() * 1000
+        globals()["T0"] = t0 / 1000
         pg.on("pageerror", lambda e: print("PAGEERROR", e))
         pg.request.post(f"{BASE}/api/demo/reset")
         flows[FLOW](pg)
@@ -335,6 +336,37 @@ def submission(pg):
     close_player(pg)
     click(pg, "[data-testid=tab-appt]", 3500)
 
-flows = {"submission": submission, "desktop-voice": desktop_voice, "desktop-marisol": desktop_marisol, "phone-marisol": phone_marisol, "desktop-caregiver-safety": desktop_caregiver_safety, "desktop-english": desktop_english}
+DERM_PERSONA = os.environ.get("DERM_PERSONA", "marisol")
+DERM_1 = os.environ.get("DERM_1", "I have a rash on my arms that won't go away and it itches a lot. I need a dermatologist, weekdays after 4pm.")
+DERM_2 = os.environ.get("DERM_2", "Thirty minutes, from home or from work.")
+
+def whatsapp_derm(pg):
+    """Dermatology booking with 💬 WhatsApp on, so the confirmation lands on WHATSAPP_TO's phone.
+    Prints when the booking appears (seconds into the video) to line the phone recording up with it."""
+    pg.goto(BASE); pg.wait_for_timeout(2000)
+    click(pg, "[data-testid=live-settings] summary", 800)
+    wa = pg.locator("[data-testid=live-whatsapp]").first
+    if wa.is_disabled():
+        sys.exit("WhatsApp isn't configured on this deployment (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, WHATSAPP_TO)")
+    if wa.get_attribute("aria-pressed") != "true":
+        click(pg, "[data-testid=live-whatsapp]", 1200)
+    click(pg, "[data-testid=live-settings] summary", 800)
+    click(pg, f"[data-testid=persona-{DERM_PERSONA}]", 2500)
+    say(pg, DERM_1, 6500)
+    say(pg, DERM_2, 6000)
+    for i in range(2):
+        hover(pg, f"[data-testid=candidate] >> nth={i}", 1200)
+    pg.mouse.move(640, 700, steps=10)
+    click(pg, "[data-testid=call-all]", 1000)
+    pg.wait_for_selector("[data-testid=booking]", timeout=150_000)
+    print(f"BOOKED at {time.time() - T0:.1f}s into the video (WhatsApp is sent now)", flush=True)
+    wait_call_audio(pg, 1)
+    pg.wait_for_timeout(1500)
+    close_player(pg)
+    click(pg, "[data-testid=tab-calls]", 3000)
+    click(pg, "[data-testid=tab-appt]", 4000)
+
+T0 = time.time()
+flows = {"whatsapp-derm": whatsapp_derm, "submission": submission, "desktop-voice": desktop_voice, "desktop-marisol": desktop_marisol, "phone-marisol": phone_marisol, "desktop-caregiver-safety": desktop_caregiver_safety, "desktop-english": desktop_english}
 if __name__ == "__main__":
     main()
