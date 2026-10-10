@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { detectLang, effectiveLatest, extract, redFlag, triage } from "@/lib/brain/rules";
-import { runTurn } from "@/lib/brain/turn";
+import { noFitReply, runTurn } from "@/lib/brain/turn";
 import { getPersona } from "@/lib/personas";
 import { emptyQuery, type ProviderQuery } from "@/lib/types";
 
@@ -127,4 +127,20 @@ describe("audit regressions (unscripted inputs)", () => {
     ["I keep getting dizzy spells", "neurology"],
     ["tengo asma y no se me controla", "pulmonology"],
   ])("triage: %s → %s", (text, want) => expect(triage(text).specialty).toBe(want));
+});
+
+describe("no office fits → honest reply, never a call promise", () => {
+  const q: ProviderQuery = { ...emptyQuery(), specialty: "neurology", insurance: "mmm-vital", max_drive_min: 25 };
+  it("names the dominant blocker (hours) in Spanish", () => {
+    const r = noFitReply(["Horario no coincide", "No acepta MMM · Plan Vital", "Horario no coincide", "Horario no coincide"], q, "es");
+    expect(r).toMatch(/^Todavía no he llamado/);
+    expect(r).toMatch(/horario/);
+    expect(r).not.toMatch(/llamo a las oficinas|empiezo a llamar/i);
+  });
+  it("drive blocker in English mentions the limit", () => {
+    expect(noFitReply(["34 min away (max 25)", "41 min away (max 25)"], q, "en")).toMatch(/farther than 25 minutes/);
+  });
+  it("insurance blocker names the plan", () => {
+    expect(noFitReply(["No acepta MMM · Plan Vital"], q, "es")).toMatch(/acepta MMM/);
+  });
 });

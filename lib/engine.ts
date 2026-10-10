@@ -5,7 +5,7 @@ import { one, pool, q } from "./db";
 import { addDays, allowedDates, daysText, formatDate, localDate, longDate, toISO, weekdayOf } from "./dates";
 import { virtualNow } from "./demo";
 import { detectLang, effectiveEarliest, effectiveLatest } from "./brain/rules";
-import { runTurn, type TurnResult } from "./brain/turn";
+import { noFitReply, runTurn, type TurnResult } from "./brain/turn";
 import { generateTimeline, type Scenario, type ScenarioCtx, type Step } from "./calls/scenarios";
 import { dialogueSteps, receptionistFor, voiceDialogue, writeDialogue, type DialogueFacts, type DialogueKind } from "./calls/dialogue";
 import { validatePath } from "./calls/machine";
@@ -43,16 +43,29 @@ export async function chatTurn(requestId: string, text: string): Promise<{ turn:
   const persona = getPersona(r.persona_id);
   const firstUser = r.messages.find((m) => m.role === "user")?.text ?? text;
   const convLang: Lang = persona.lang === "en" || detectLang(firstUser) === "en" ? "en" : "es";
-  const ready = r.status === "ready";
+  // only "ready" if the last list actually had offices to call (a no-fit list asked a different question)
+  const ready = r.status === "ready" && r.shortlist.some((c) => c.included);
+  const busy = ["calling", "booked"].includes(r.status);
   const turn = await runTurn({ text, today: await today(), persona, query: r.query, expecting: r.expecting as never, convLang, history: r.messages.filter((m) => m.role !== "system"), ready });
   const shortlist = turn.action === "emergency" ? r.shortlist : await searchProviders(turn.query, persona, persona.lang === "en" ? "en" : "es");
-  // "yes, call them" with nothing that fits → keep asking instead of dialing an empty list
-  if (turn.action === "call" && !shortlist.some((c) => c.included)) turn.action = "search";
+  // nothing fits → never dial an empty list, and replace the model's reply (it can't see the
+  // shortlist, so it may offer or promise calls) with one that says what to relax
+  if (!busy && (turn.action === "call" || turn.action === "search") && !shortlist.some((c) => c.included)) {
+    turn.action = "search";
+    turn.reply = noFitReply(shortlist.map((c) => c.excluded_reason), turn.query, turn.lang);
+  }
+  // calls already running or booked: never start a second round from chat
+  if (busy && (turn.action === "call" || turn.wantsCall)) {
+    turn.action = "search";
+    turn.reply = r.status === "booked"
+      ? (turn.lang === "en" ? "You're already booked. Check the calls panel for the details." : "Ya tienes la cita separada. Mira el panel de llamadas para los detalles.")
+      : (turn.lang === "en" ? "I'm already calling the offices. I'll let you know as soon as one confirms." : "Ya estoy llamando a las oficinas. Te aviso en cuanto una confirme.");
+  }
   const now = new Date().toISOString();
   const messages = [...r.messages, { role: "user", text, at: now }, { role: "assistant", text: turn.reply, at: now, kind: turn.action }];
   await q("UPDATE care_requests SET query=$2, expecting=$3, messages=$4, shortlist=$5, status=$6 WHERE id=$1",
     [requestId, JSON.stringify(turn.query), turn.expecting, JSON.stringify(messages), JSON.stringify(shortlist),
-      turn.action === "emergency" ? "emergency" : turn.action === "search" || turn.action === "call" ? "ready" : "drafting"]);
+      turn.action === "emergency" ? "emergency" : busy ? r.status : turn.action === "search" || turn.action === "call" ? "ready" : "drafting"]);
   if (turn.action === "call") await startCalls(requestId);
   return { turn, shortlist, persona };
 }
