@@ -7,13 +7,15 @@ import { virtualNow } from "./demo";
 import { detectLang, effectiveEarliest, effectiveLatest } from "./brain/rules";
 import { noFitReply, runTurn, type TurnResult } from "./brain/turn";
 import { generateTimeline, type Scenario, type ScenarioCtx, type Step } from "./calls/scenarios";
-import { dialogueSteps, receptionistFor, voiceDialogue, writeDialogue, type DialogueFacts, type DialogueKind } from "./calls/dialogue";
+import { dialogueSteps, receptionistFor, voiceDialogue, writeDialogue, type DialogueFacts, type DialogueKind, type GenLine } from "./calls/dialogue";
+import { runConversation, type CallBrief, type CallKind, type Opening } from "./calls/conversation";
 import { validatePath } from "./calls/machine";
 import { background } from "./background";
 import { openrouterConfigured } from "./ai/openrouter";
 import { elevenConfigured } from "./voice/elevenlabs";
 import { buildIcs, googleConfigured, pushToGoogle, type InviteInput } from "./calendar";
-import { decideRebook } from "./rebook";
+import { decideRebook, slotSatisfies } from "./rebook";
+import { hoursText } from "@/components/format";
 import { INSURERS } from "./personas";
 import { loadPersona } from "./profiles";
 import { searchProviders, SHORTLIST_SIZE } from "./search";
@@ -78,11 +80,6 @@ function rng(seed: number) {
 }
 const hash = (s: string) => [...s].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 7);
 
-// Marisol's demo is pinned so the stage run is identical every time.
-const MARISOL_SCRIPT: Record<string, Scenario> = {
-  "pod-caguas": "no_answer", "pod-hatorey": "hero", "pod-mendez": "busy_nofit", "pod-gurabo": "ivr_nofit", "pod-trujillo": "voicemail",
-};
-
 function openTime(p: Provider, date: string, q: ProviderQuery) {
   const h = p.hours.find((x) => x.weekday === weekdayOf(date));
   if (!h) return null;
@@ -106,6 +103,46 @@ function laterThanDeadline(p: Provider, q: ProviderQuery, day0: string): string 
   const after = addDays(effectiveLatest(q) ?? addDays(day0, 60), 14);
   const d = allowedDates(after, addDays(after, 30), q.days_of_week).find((x) => p.hours.some((h) => h.weekday === weekdayOf(x))) ?? after;
   return d;
+}
+
+// ---------- office calendars for AI-to-AI calls ----------
+type Brief = Omit<CallBrief, "kind" | "facts">;
+
+/** The agent's calendar check: null when a slot works for the patient, else why not (read by the agent model). */
+function checker(query: ProviderQuery, day0: string, now: Date, current?: string) {
+  const far = query.asap && !effectiveLatest(query) ? addDays(day0, 30) : null;
+  return (iso: string): string | null => {
+    if (current && new Date(iso) >= new Date(current)) return "it is not earlier than the current appointment";
+    const bad = slotSatisfies(iso, query, now);
+    if (bad === "day") return `the patient can only go ${daysText(query.days_of_week, "en")}`;
+    if (bad === "deadline") return `it is after the patient's deadline (${formatDate(effectiveLatest(query)!, "en")})`;
+    if (bad === "time") return `it is outside the patient's hours (${query.time_windows.map((w) => `${w.start}-${w.end}`).join(" or ")})`;
+    if (bad) return bad === "notice" ? "it is too soon to make it" : "the office is closed that day";
+    if (far && localDate(iso) > far) return "it is too far out for 'as soon as possible'";
+    return null;
+  };
+}
+
+function briefFor(p: Provider, lang: Lang, isos: string[], check: (iso: string) => string | null): Brief {
+  const openings: Opening[] = [...new Set(isos)].sort().map((iso, i) => ({ id: `O${i + 1}`, iso, text: longDate(iso, lang) }));
+  return { openings, hours: hoursText(p.hours, lang), plans: p.insurers.map((i) => INSURERS[i]?.name ?? i), check };
+}
+
+/** Office hours + 1h on a date, or null when closed. */
+function slotOn(p: Provider, date: string) {
+  const h = p.hours.find((x) => x.weekday === weekdayOf(date));
+  if (!h) return null;
+  const m = Number(h.opens.slice(0, 2)) * 60 + Number(h.opens.slice(3)) + 60;
+  return toISO(date, `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);
+}
+
+/** An earlier opening that breaks one of the patient's constraints, so the agent has something to turn down. */
+function distractor(p: Provider, day0: string, offer: string, check: (iso: string) => string | null) {
+  for (let d = addDays(day0, 3); d < localDate(offer); d = addDays(d, 1)) {
+    const iso = slotOn(p, d);
+    if (iso && check(iso) && !/too soon|closed/.test(check(iso)!)) return iso;
+  }
+  return null;
 }
 
 function ctxFor(persona: Persona, query: ProviderQuery, lang: Lang): ScenarioCtx {
@@ -136,7 +173,7 @@ async function createCall(requestId: string, providerId: string, purpose: string
   return call!.id;
 }
 
-// ---------- unscripted calls: header now, conversation written + voiced in the background ----------
+// ---------- answered calls: header now, AI-to-AI conversation + voice in the background ----------
 const DIALOGUE_KIND: Partial<Record<Scenario, DialogueKind>> = { success: "book", busy_nofit: "nofit", ivr_nofit: "nofit", rebook: "rebook", cancel: "cancel" };
 
 function factsFor(persona: Persona, query: ProviderQuery, provider: { id: string; name: string }, lang: Lang, sc: ScenarioCtx): DialogueFacts {
@@ -156,7 +193,7 @@ function wantsAudio(kind: DialogueKind) {
   return elevenConfigured() && (mode === "all" || (mode === "featured" && kind !== "nofit"));
 }
 
-async function createLiveCall(requestId: string, provider: { id: string; name: string }, purpose: string, scenario: Scenario, sc: ScenarioCtx, facts: DialogueFacts, startOffsetSec = 0, appointmentId: string | null = null) {
+async function createLiveCall(requestId: string, provider: { id: string; name: string }, purpose: string, scenario: Scenario, sc: ScenarioCtx, facts: DialogueFacts, startOffsetSec = 0, appointmentId: string | null = null, brief?: Brief) {
   const template = generateTimeline(scenario, sc);
   const kind = DIALOGUE_KIND[scenario];
   if (!kind || !openrouterConfigured()) return createCall(requestId, provider.id, purpose, scenario, template, startOffsetSec, appointmentId);
@@ -166,13 +203,23 @@ async function createLiveCall(requestId: string, provider: { id: string; name: s
   const rest = template.filter((x) => !header.includes(x));
   const callId = await createCall(requestId, provider.id, purpose, scenario, header, startOffsetSec, appointmentId);
   const start = Date.now() + startOffsetSec * 1000;
-  const effect = (template.find((x) => x.payload?.effect && x.payload.effect !== "waitlist")?.payload ?? {}) as Record<string, unknown>;
+  let effect = (template.find((x) => x.payload?.effect && x.payload.effect !== "waitlist")?.payload ?? {}) as Record<string, unknown>;
   background(`call:${callId}`, async () => {
     let steps: Step[] | null = null;
-    const lines = await writeDialogue(kind, facts).catch(() => null);
+    let lines: GenLine[] | null = null;
+    let voiceKind: DialogueKind = kind;
+    if (brief) {
+      const conv = await runConversation({ ...brief, kind: purpose as CallKind, facts }).catch((e) => { console.warn("[conversation] failed", (e as Error).message); return null; });
+      if (conv) {
+        lines = conv.lines;
+        if (conv.outcome === "booked") effect = { effect: purpose === "rebook" ? "rebook" : "book", starts_at: conv.startsAt };
+        voiceKind = conv.outcome === "booked" ? (purpose === "rebook" ? "rebook" : "book") : conv.outcome === "cancelled" ? "cancel" : "nofit";
+      }
+    }
+    if (!lines) lines = await writeDialogue(kind, facts).catch(() => null);
     if (lines) {
       let voiced: Awaited<ReturnType<typeof voiceDialogue>> | null = null;
-      if (wantsAudio(kind)) voiced = await voiceDialogue(lines, facts).catch((e) => { console.warn("[call audio] failed", e.message); return null; });
+      if (wantsAudio(voiceKind)) voiced = await voiceDialogue(lines, facts).catch((e) => { console.warn("[call audio] failed", e.message); return null; });
       const t0 = Math.max(tHuman + 0.4, (Date.now() - start) / 1000 + 0.8);
       const d = dialogueSteps(lines, t0, effect, voiced?.timings);
       const pickup: Step = { t: t0 - 0.3, state: "HUMAN", speaker: "system", text: facts.lang === "en" ? "A person answered" : "Contestó una persona" };
@@ -204,26 +251,30 @@ export async function startCalls(requestId: string) {
   const list = r.shortlist.filter((c) => c.included).slice(0, SHORTLIST_SIZE);
   if (!list.length) throw new Error("empty shortlist");
   const ctx = ctxFor(persona, r.query, lang);
-  const pinned = persona.id === "marisol" && list.some((c) => MARISOL_SCRIPT[c.id]);
+  const check = checker(r.query, day0, await virtualNow());
   // generic: one office ends up offering a fitting slot (highest-ranked with a decent answer rate)
   const successId = (list.find((c) => c.answer_rate >= 0.6) ?? list[0]).id;
   const pool: Scenario[] = ["no_answer", "busy_nofit", "ivr_nofit", "voicemail"];
   let i = 0;
   for (const c of list) {
     const pr = rng(r.seed + hash(c.id));
-    let scenario: Scenario = pinned ? MARISOL_SCRIPT[c.id] ?? "no_answer" : c.id === successId ? "success" : pool[Math.floor(pr() * pool.length)];
+    let scenario: Scenario = c.id === successId ? "success" : pool[Math.floor(pr() * pool.length)];
     const sc: ScenarioCtx = { ...ctx };
-    if (scenario === "hero") {
-      const slot = await one<{ starts_at: Date }>("SELECT starts_at FROM provider_slots WHERE provider_id=$1 AND status='open' ORDER BY starts_at LIMIT 1", [c.id]);
-      sc.offerISO = slot ? new Date(slot.starts_at).toISOString() : toISO("2026-11-19", "10:00");
-    } else if (scenario === "success") {
-      const offer = syntheticOffer(c, r.query, day0, pr);
+    let isos: string[] = [];
+    if (scenario === "success") {
+      // a real open slot at this office if one fits (seeded demo data), else a synthetic one
+      const open = await q<{ starts_at: Date }>("SELECT starts_at FROM provider_slots WHERE provider_id=$1 AND status='open' ORDER BY starts_at", [c.id]);
+      const offer = open.map((x) => new Date(x.starts_at).toISOString()).find((iso) => !check(iso)) ?? syntheticOffer(c, r.query, day0, pr);
       if (!offer) scenario = "ivr_nofit";
-      else { sc.offerISO = offer; sc.offerText = longDate(offer, lang); }
+      else { sc.offerISO = offer; sc.offerText = longDate(offer, lang); isos = [offer, distractor(c, day0, offer, check)].filter((x): x is string => !!x); }
     }
-    if (scenario === "busy_nofit" || scenario === "ivr_nofit") sc.laterText = longDate(laterThanDeadline(c, r.query, day0), lang, false);
-    if (scenario === "hero") await createCall(requestId, c.id, "book", scenario, generateTimeline(scenario, sc), i * 0.35);
-    else await createLiveCall(requestId, c, "book", scenario, sc, factsFor(persona, r.query, c, lang, sc), i * 0.35);
+    if (scenario === "busy_nofit" || scenario === "ivr_nofit") {
+      const later = laterThanDeadline(c, r.query, day0);
+      sc.laterText = longDate(later, lang, false);
+      // only openings that break a constraint, so this office can't book
+      isos = [slotOn(c, later), slotOn(c, addDays(later, 7))].filter((x): x is string => !!x && !!check(x));
+    }
+    await createLiveCall(requestId, c, "book", scenario, sc, factsFor(persona, r.query, c, lang, sc), i * 0.35, null, briefFor(c, lang, isos, check));
     i++;
   }
   await q("UPDATE care_requests SET status='calling' WHERE id=$1", [requestId]);
@@ -337,6 +388,11 @@ async function applyEffect(requestId: string, callId: string, effect: string, pa
   }
 }
 
+async function providerRow(id: string): Promise<Provider> {
+  const p = await one<Provider & { insurers: string[] }>("SELECT * FROM providers WHERE id=$1", [id]);
+  return p!;
+}
+
 // ---------- background rebooking scan ----------
 export async function rebookScan(requestId: string) {
   const r = await getRequest(requestId);
@@ -357,12 +413,10 @@ export async function rebookScan(requestId: string) {
     if (d.action === "skip") continue;
     if (d.action === "ask") { await notify(requestId, "ask_rebook", `¿La movemos a ${longDate(iso, lang)}?`); return d; }
     const ctx = ctxFor(persona, r.query, lang);
-    const hero = persona.id === "marisol" && s.provider_id === "pod-hatorey";
-    const scenario: Scenario = hero ? "rebook_hero" : "rebook";
     const rsc: ScenarioCtx = { ...ctx, offerISO: iso, offerText: longDate(iso, lang), currentText: longDate(current, lang) };
-    const prov = await one<{ id: string; name: string }>("SELECT id, name FROM providers WHERE id=$1", [s.provider_id]);
-    if (hero) await createCall(requestId, s.provider_id, "rebook", scenario, generateTimeline(scenario, rsc), 0.5, appt.id);
-    else await createLiveCall(requestId, prov!, "rebook", scenario, rsc, factsFor(persona, r.query, prov!, lang, rsc), 0.5, appt.id);
+    const prov = await providerRow(s.provider_id);
+    const brief = briefFor(prov, lang, [iso], checker(r.query, localDate(now.toISOString()), now, current));
+    await createLiveCall(requestId, prov, "rebook", "rebook", rsc, factsFor(persona, r.query, prov, lang, rsc), 0.5, appt.id, brief);
     await notify(requestId, "scan", lang === "en" ? "Background check found an earlier opening. Calling to move you." : "La revisión automática encontró un espacio más temprano. Llamando para moverte.");
     return { action: "rebook", reason: d.reason, slot: iso };
   }
@@ -378,13 +432,10 @@ export async function cancelAppointment(requestId: string) {
   if (pending) return; // idempotent
   const persona = await loadPersona(r.persona_id);
   const iso = new Date(appt.starts_at).toISOString();
-  // the pre-rendered audio says "jueves 29 de octubre", so only use it when that is the date being cancelled
-  const hero = persona.id === "marisol" && appt.provider_id === "pod-hatorey" && localDate(iso) === "2026-10-29";
-  const scenario: Scenario = hero ? "cancel_hero" : "cancel";
   const csc: ScenarioCtx = { ...ctxFor(persona, r.query, persona.lang), currentText: longDate(iso, persona.lang) };
-  const prov = await one<{ id: string; name: string }>("SELECT id, name FROM providers WHERE id=$1", [appt.provider_id]);
-  if (hero) await createCall(requestId, appt.provider_id, "cancel", scenario, generateTimeline(scenario, csc), 0.3, appt.id);
-  else await createLiveCall(requestId, prov!, "cancel", scenario, csc, factsFor(persona, r.query, prov!, persona.lang, csc), 0.3, appt.id);
+  const prov = await providerRow(appt.provider_id);
+  const brief = briefFor(prov, persona.lang, [], () => null);
+  await createLiveCall(requestId, prov, "cancel", "cancel", csc, factsFor(persona, r.query, prov, persona.lang, csc), 0.3, appt.id, brief);
 }
 
 // ---------- snapshot for the UI ----------

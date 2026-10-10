@@ -16,8 +16,8 @@ calendar invite, keeps watching for an earlier opening, and can call to cancel s
 | Search + filters + ranking | **Real** | Parameterized SQL on Postgres 16 (Neon-compatible), then plan/day/hours/language/access/drive filters. |
 | Drive times | **Estimated** | Straight-line × 1.25 at 60 km/h + 3 min (`lib/geo.ts`). Swap for Google Routes `computeRouteMatrix`. |
 | Map | **Offline basemap** | Leaflet + Natural Earth PR outline, no streets. Pan/zoom/fit-to-pins are real. Google Maps JS not wired. |
-| Phone calls | **Simulated** | Outcomes are deterministic (`lib/calls/scenarios.ts`) and validated against a state machine; the conversation is written per request by `REASONER_MODEL` (`lib/calls/dialogue.ts`), template fallback. No call is ever placed. |
-| Call audio | **Synthetic (ElevenLabs)** | Booking/rebook/cancel calls are voiced with ElevenLabs Text-to-Dialogue (`CALL_AUDIO=featured`); Marisol's 3 pinned calls are pre-rendered (`npm run voice:calls`). |
+| Phone calls | **Simulated, AI-to-AI** | Which offices answer is seeded (`lib/calls/scenarios.ts`); each answered call is two models talking turn by turn (`lib/calls/conversation.ts`): CitaYa with the request, a receptionist with the office's invented calendar. Offers are checked in code against the request, and the outcome is validated against the call state machine. Falls back to a one-shot writer (`lib/calls/dialogue.ts`), then templates. No call is ever placed. |
+| Call audio | **Synthetic (ElevenLabs)** | Booking/rebook/cancel calls are voiced with ElevenLabs Text-to-Dialogue after the conversation finishes (`CALL_AUDIO=featured`). |
 | Book / move earlier / cancel | **Real logic, fake slots** | Book-then-release, one active booking per request (unique index), rebook only if strictly earlier and still valid. |
 | Calendar invite | **Real .ics, Google not connected** | Standards-compliant .ics (REQUEST/CANCEL, SEQUENCE). Google Calendar adapter in `lib/calendar.ts` is untested; no email is sent. |
 | Background re-check | **Simulated clock** | "Skip ahead 3 days" advances a virtual clock and runs the same `rebookScan()` a QStash job would call. |
@@ -43,7 +43,6 @@ npm test                # 77 unit tests (vitest)
 
 Local Postgres via Docker: `docker run -d --name citaya-pg -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=citaya -p 5433:5432 postgres:16`
 
-Regenerate the pinned call audio with ElevenLabs: `npm run voice:calls` (~1.9k characters). The old Kokoro pipeline (`npm run tts`) is kept for offline use.
 
 Record demos: `python3 scripts/record/record.py desktop-marisol|phone-marisol|desktop-caregiver-safety|desktop-english`
 (Playwright video + ffmpeg muxes the call audio at the moments the page logged playback).

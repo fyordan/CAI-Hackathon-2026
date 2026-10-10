@@ -1,10 +1,7 @@
 // SIMULATED PHONE CALLS. No real phone call is placed anywhere in this build.
-// Each call is a deterministic timeline (seeded) of state changes + transcript lines.
-// Three Marisol calls also have pre-rendered two-voice TTS audio (public/calls/*.mp3)
-// whose cue sheets drive the exact same timeline, so transcript and audio stay in sync.
-import heroCues from "../../public/calls/hero.json";
-import rebookCues from "../../public/calls/rebook.json";
-import cancelCues from "../../public/calls/cancel.json";
+// Each call is a deterministic timeline (seeded) of state changes + transcript lines. Answered
+// calls are replaced by an AI-to-AI conversation (conversation.ts) when a model is configured;
+// these template lines are the offline fallback.
 import { validatePath } from "./machine";
 import type { CallState, Lang } from "../types";
 
@@ -16,7 +13,7 @@ export interface Step {
   payload?: Record<string, unknown>;
 }
 
-export type Scenario = "hero" | "rebook_hero" | "cancel_hero" | "success" | "no_answer" | "busy_nofit" | "ivr_nofit" | "voicemail" | "rebook" | "cancel";
+export type Scenario = "success" | "no_answer" | "busy_nofit" | "ivr_nofit" | "voicemail" | "rebook" | "cancel";
 
 export interface ScenarioCtx {
   lang: Lang;
@@ -28,41 +25,6 @@ export interface ScenarioCtx {
   offerText?: string;      // human text for offer
   laterText?: string;      // first opening that does NOT fit (no-fit cases)
   currentText?: string;    // existing appointment (rebook/cancel)
-}
-
-type Cue = { t: number; speaker: string; text: string | null; event: string | null };
-// pre_roll: seconds of ringing before the audio starts (ElevenLabs renders have no ring tone baked in)
-const AUDIO: Record<string, { cues: Cue[]; src: string; pre: number }> = {
-  hero: { cues: heroCues.cues, src: "/calls/hero.mp3", pre: (heroCues as { pre_roll?: number }).pre_roll ?? 0 },
-  rebook_hero: { cues: rebookCues.cues, src: "/calls/rebook.mp3", pre: (rebookCues as { pre_roll?: number }).pre_roll ?? 0 },
-  cancel_hero: { cues: cancelCues.cues, src: "/calls/cancel.mp3", pre: (cancelCues as { pre_roll?: number }).pre_roll ?? 0 },
-};
-
-function fromCues(name: keyof typeof AUDIO, effect: Record<string, unknown>): Step[] {
-  const { cues, src, pre } = AUDIO[name];
-  let B = 1.2;
-  const steps: Step[] = [{ t: 0.3, state: "DIALING", speaker: "system", text: "Marcando…" }];
-  if (pre) {
-    steps.push({ t: B, state: "RINGING", speaker: "system", text: "Sonando…" });
-    B += pre;
-    steps.push({ t: B - 0.05, state: "HUMAN", speaker: "system", text: "Contestó una persona", payload: { audio: src, audio_start: true } });
-  }
-  let negotiating = false;
-  for (const c of cues) {
-    if (c.event === "RINGING") steps.push({ t: B + c.t, state: "RINGING", speaker: "system", text: "Sonando…", payload: { audio: src, audio_start: true } });
-    else if (c.event === "HUMAN") steps.push({ t: B + c.t, state: "HUMAN", speaker: "system", text: "Contestó una persona" });
-    else if (c.event) {
-      const step: Step = { t: B + c.t, state: c.event as CallState };
-      if (c.event === "SLOT_OFFERED" && effect.starts_at) step.payload = { starts_at: effect.starts_at };
-      if (["BOOKED", "CANCELLED"].includes(c.event)) step.payload = effect;
-      steps.push(step);
-    }
-    if (c.speaker === "agent" || c.speaker === "office") {
-      if (c.speaker === "agent" && !negotiating) { steps.push({ t: B + c.t, state: "NEGOTIATING" }); negotiating = true; }
-      steps.push({ t: B + c.t, speaker: c.speaker, text: c.text! });
-    }
-  }
-  return steps;
 }
 
 const L = (lang: Lang, es: string, en: string) => (lang === "en" ? en : es);
@@ -94,12 +56,6 @@ export function generateTimeline(s: Scenario, c: ScenarioCtx): Step[] {
   const sys = (t: number, state: CallState, es: string, en: string, payload?: Step["payload"]): Step => ({ t, state, speaker: "system", text: L(c.lang, es, en), payload });
   let steps: Step[];
   switch (s) {
-    case "hero":
-      steps = fromCues("hero", { effect: "book", starts_at: c.offerISO }); break;
-    case "rebook_hero":
-      steps = fromCues("rebook_hero", { effect: "rebook", starts_at: c.offerISO }); break;
-    case "cancel_hero":
-      steps = fromCues("cancel_hero", { effect: "cancel" }); break;
     case "success":
       steps = [sys(0.3, "DIALING", "Marcando…", "Dialing…"), sys(1.4, "RINGING", "Sonando…", "Ringing…"), sys(4, "HUMAN", "Contestó una persona", "A person answered"),
         ...talk(4.2, [

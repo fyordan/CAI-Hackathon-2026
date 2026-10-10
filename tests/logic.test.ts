@@ -6,6 +6,7 @@ import { buildProviders, ISLAND } from "@/lib/seed-data";
 import { getPersona } from "@/lib/personas";
 import { afterFailedAttempt, InvalidTransition, transition, validatePath } from "@/lib/calls/machine";
 import { generateTimeline, type Scenario } from "@/lib/calls/scenarios";
+import { toResult } from "@/lib/calls/conversation";
 import { decideRebook } from "@/lib/rebook";
 import { buildGoogleEvent, buildIcs } from "@/lib/calendar";
 import { emptyQuery, type ProviderQuery } from "@/lib/types";
@@ -43,7 +44,7 @@ describe("ranking (Marisol)", () => {
   it("R3 closed Thursdays is excluded", () => expect(by("pod-cayey").excluded_reason).toMatch(/Cerrado/));
   it("R4 plan not accepted is excluded", () => expect(by("pod-carolina").excluded_reason).toMatch(/Triple-S/));
   it("R5 just over the drive limit is excluded", () => expect(by("pod-humacao").excluded_reason).toMatch(/32 min/));
-  it("exactly the five scripted offices make the shortlist", () => expect(ranked.filter((c) => c.included).map((c) => c.id).sort()).toEqual(["pod-caguas", "pod-gurabo", "pod-hatorey", "pod-mendez", "pod-trujillo"]));
+  it("exactly the five demo offices make the shortlist", () => expect(ranked.filter((c) => c.included).map((c) => c.id).sort()).toEqual(["pod-caguas", "pod-gurabo", "pod-hatorey", "pod-mendez", "pod-trujillo"]));
   it("drive estimate is symmetric and monotonic", () => {
     expect(estimateDriveMin(marisol.home, marisol.work!)).toBe(estimateDriveMin(marisol.work!, marisol.home));
     expect(estimateDriveMin(marisol.home, marisol.home)).toBe(3);
@@ -55,12 +56,12 @@ describe("call state machine", () => {
   it("S2 first failure retries with backoff", () => expect(afterFailedAttempt(1)).toEqual({ next: "RETRY_SCHEDULED", delaySec: 60 }));
   it("S3 gives up after 2 attempts", () => expect(afterFailedAttempt(2).next).toBe("GAVE_UP"));
   const ctx = { lang: "es" as const, patient: "Marisol Rivera", specialty: "podiatría", days: "los jueves", insurance: "Triple-S", offerISO: "2026-11-19T14:00:00.000Z", offerText: "x", laterText: "y", currentText: "z" };
-  it.each(["hero", "rebook_hero", "cancel_hero", "success", "no_answer", "busy_nofit", "ivr_nofit", "voicemail", "rebook", "cancel"] as Scenario[])("scenario %s is a valid path", (s) => {
+  it.each(["success", "no_answer", "busy_nofit", "ivr_nofit", "voicemail", "rebook", "cancel"] as Scenario[])("scenario %s is a valid path", (s) => {
     const steps = generateTimeline(s, ctx);
     expect(() => validatePath(steps.filter((x) => x.state).map((x) => x.state!))).not.toThrow();
   });
-  it("hero call books exactly once, with the offered slot", () => {
-    const booked = generateTimeline("hero", ctx).filter((s) => s.payload?.effect === "book");
+  it("a successful call books exactly once, with the offered slot", () => {
+    const booked = generateTimeline("success", ctx).filter((s) => s.payload?.effect === "book");
     expect(booked).toHaveLength(1);
     expect(booked[0].payload!.starts_at).toBe(ctx.offerISO);
   });
@@ -105,4 +106,33 @@ describe("island offices stay out of the scripted demos", () => {
     }
   });
   it("ids are unique", () => { const ids = buildProviders().map((p) => p.id); expect(new Set(ids).size).toBe(ids.length); });
+});
+
+describe("AI-to-AI calls: outcome comes from what was said, checked in code", () => {
+  const facts = { lang: "es" as const, office: "X", receptionist: { name: "Wanda", gender: "f" as const }, patient: "Marisol", caller_relation: null, specialty: "podiatría", reason: null, notes: [], days: "los jueves", timeText: null, deadlineText: null, insurance: "Triple-S" };
+  const openings = [{ id: "O1", iso: "2026-10-27T12:00:00.000Z", text: "martes" }, { id: "O2", iso: "2026-11-19T14:00:00.000Z", text: "jueves" }];
+  const brief = (kind: "book" | "rebook" | "cancel") => ({ kind, facts, openings, hours: "", plans: [], check: (iso: string) => (iso === openings[0].iso ? "the patient can only go on Thursdays" : null) });
+  const t = (speaker: "agent" | "office", action: string, opening_id = "") => ({ speaker, say: "…", action: action as never, opening_id });
+  const events = (r: ReturnType<typeof toResult>) => r!.lines.map((l) => l.event).filter((e) => e !== "none");
+
+  it("declining a bad slot then booking a good one offers and books the good one", () => {
+    const r = toResult(brief("book"), [t("office", "none"), t("agent", "none"), t("office", "offer", "O1"), t("agent", "decline", "O1"), t("office", "offer", "O2"), t("agent", "accept", "O2"), t("office", "book", "O2"), t("agent", "end")]);
+    expect(r!.outcome).toBe("booked");
+    expect(r!.startsAt).toBe(openings[1].iso);
+    expect(events(r)).toEqual(["SLOT_OFFERED", "BOOKED"]);
+    expect(() => validatePath(["DIALING", "RINGING", "HUMAN", "NEGOTIATING", ...events(r) as never[], "COMPLETED"])).not.toThrow();
+  });
+  it("an office booking a slot that breaks a constraint is rejected", () =>
+    expect(toResult(brief("book"), [t("office", "offer", "O1"), t("agent", "accept", "O1"), t("office", "book", "O1")])).toBeNull());
+  it("nothing fits → NO_FIT then WAITLISTED", () => {
+    const r = toResult(brief("book"), [t("office", "none"), t("agent", "none"), t("office", "offer", "O1"), t("agent", "decline", "O1"), t("office", "waitlist"), t("agent", "end")]);
+    expect(r!.outcome).toBe("waitlisted");
+    expect(events(r)).toEqual(["NO_FIT", "WAITLISTED"]);
+  });
+  it("a cancel call needs the office to confirm", () => {
+    expect(toResult(brief("cancel"), [t("office", "none"), t("agent", "none"), t("office", "end")])).toBeNull();
+    expect(events(toResult(brief("cancel"), [t("office", "none"), t("agent", "none"), t("office", "cancelled"), t("agent", "end")]))).toEqual(["CANCELLED"]);
+  });
+  it("a rebook call that doesn't move anything falls back", () =>
+    expect(toResult(brief("rebook"), [t("office", "none"), t("agent", "none"), t("office", "end")])).toBeNull());
 });

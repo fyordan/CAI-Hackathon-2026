@@ -192,8 +192,9 @@ def hover(pg, sel, ms=1500):
     pg.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + 20, steps=20)
     pg.wait_for_timeout(ms)
 
-def wait_audio_end(pg, src, timeout=90_000):
-    pg.wait_for_function(f"(window.__audioLog||[]).some(e => e.src === '{src}' && e.ev === 'ended')", timeout=timeout)
+def wait_call_audio(pg, n, timeout=150_000):
+    """Calls are AI-to-AI and voiced on the fly (/api/audio/<id>.mp3): wait until the n-th one has finished playing."""
+    pg.wait_for_function(f"(window.__audioLog||[]).filter(e => e.src.startsWith('/api/audio/') && e.ev === 'ended').length >= {n}", timeout=timeout)
 
 def close_player(pg):
     if pg.locator("[data-testid=call-player]").count():
@@ -209,22 +210,22 @@ def desktop_marisol(pg):
         hover(pg, f"[data-testid=candidate] >> nth={i}", 1300)
     pg.mouse.move(640, 700, steps=10)
     click(pg, "[data-testid=call-all]", 1000)
-    pg.wait_for_selector("[data-testid=booking]", timeout=90_000)   # hero call books near the end of its audio
-    wait_audio_end(pg, "/calls/hero.mp3")
+    pg.wait_for_selector("[data-testid=booking]", timeout=150_000)  # the booking lands near the end of the call audio
+    wait_call_audio(pg, 1)
     pg.wait_for_timeout(1500)
     close_player(pg)
     click(pg, "[data-testid=tab-calls]", 3000)
     click(pg, "[data-testid=tab-appt]", 3000)
     click(pg, "[data-testid=fast-forward]", 1000)
-    pg.wait_for_selector("[data-testid=toast-rebooked]", timeout=90_000)
-    wait_audio_end(pg, "/calls/rebook.mp3")
+    pg.wait_for_selector("[data-testid=toast-rebooked]", timeout=150_000)
+    wait_call_audio(pg, 2)
     pg.wait_for_timeout(1500)
     close_player(pg)
     click(pg, "[data-testid=tab-appt]", 3500)
     click(pg, "[data-testid=cancel]", 1800)
     click(pg, "[data-testid=confirm-cancel]", 1000)
     pg.wait_for_selector("[data-testid=toast-cancelled]", timeout=60_000)
-    wait_audio_end(pg, "/calls/cancel.mp3")
+    wait_call_audio(pg, 3)
     pg.wait_for_timeout(1000)
     close_player(pg)
     click(pg, "[data-testid=tab-appt]", 3000)
@@ -242,15 +243,15 @@ def phone_marisol(pg):
     click(pg, "[data-testid=m-list]", 2500)
     pg.mouse.wheel(0, 500); pg.wait_for_timeout(1500)
     click(pg, ".sticky-cta button", 1000)
-    pg.wait_for_selector("[data-testid=booking]", timeout=90_000)
-    wait_audio_end(pg, "/calls/hero.mp3")
+    pg.wait_for_selector("[data-testid=booking]", timeout=150_000)
+    wait_call_audio(pg, 1)
     pg.wait_for_timeout(1200)
     close_player(pg)
     pg.wait_for_timeout(2000)
     click(pg, "[data-testid=m-appt]", 3000)
     click(pg, "[data-testid=fast-forward]", 1000)
-    pg.wait_for_selector("[data-testid=toast-rebooked]", timeout=90_000)
-    wait_audio_end(pg, "/calls/rebook.mp3")
+    pg.wait_for_selector("[data-testid=toast-rebooked]", timeout=150_000)
+    wait_call_audio(pg, 2)
     pg.wait_for_timeout(1200)
     close_player(pg)
     click(pg, "[data-testid=m-appt]", 3500)

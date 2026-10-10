@@ -132,7 +132,7 @@ export interface CallTask {
   state: CallState;
   attempt: number;
   started_at: string;
-  audio: string | null;     // /calls/hero.mp3 when a rendered call exists
+  audio: string | null;     // /api/audio/<id>.mp3 when the call was voiced
 }
 
 export interface Appointment {

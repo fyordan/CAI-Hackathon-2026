@@ -200,8 +200,6 @@ export default function Workspace({ persona }: { persona: Persona }) {
   const listening = voice.mic === "listening";
 
   const playerTask = snap?.tasks.find((x) => x.id === player) ?? null;
-  const vnow = snap ? new Date(snap.virtual_now) : null;
-  const clock = vnow ? `${formatDate(new Date(vnow.getTime() - 4 * 3600_000).toISOString().slice(0, 10), lang)} · ${formatTime(new Date(vnow.getTime() - 4 * 3600_000).toISOString().slice(11, 16))}` : "";
   const outcome = (tk: TaskView) => {
     const ev = snap?.events.filter((e) => e.call_id === tk.id && e.to_state && e.to_state !== "COMPLETED") ?? [];
     return tk.state === "COMPLETED" ? ev[ev.length - 1]?.to_state ?? tk.state : tk.state;
@@ -227,7 +225,6 @@ export default function Workspace({ persona }: { persona: Persona }) {
           <span>{persona.patient ? `${t(lang, "patientFor")} ${persona.patient.name} · ` : ""}{persona.home.label.split("·").pop()?.trim()} · {INSURERS[persona.insurance]?.name}</span>
         </div>
         <div className="head-actions">
-          <span className="clock" title={t(lang, "demoTime")} data-testid="clock">{clock}</span>
           {appt?.status === "booked" && <button className="btn" onClick={fastForward} data-testid="fast-forward">⏩ <span className="hide-sm">{t(lang, "ff")}</span><span className="show-sm">+3d</span></button>}
           <a className="btn ghost hide-sm" href={`/profile/${persona.id}`} data-testid="profile">{t(lang, "profile")}</a>
           <button className="btn ghost" onClick={() => setShowReal(true)} data-testid="whats-real">{t(lang, "real")}</button>

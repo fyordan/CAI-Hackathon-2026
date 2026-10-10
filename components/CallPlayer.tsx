@@ -1,6 +1,6 @@
 "use client";
 // Plays a SIMULATED call (ElevenLabs voices: pre-rendered for the pinned demo, generated per request otherwise) in sync with the call timeline.
-// "Live" means joining the scripted call at the point the timeline has reached.
+// "Live" means joining the call at the point its timeline has reached.
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Lang } from "@/lib/types";
 import { t } from "./i18n";
@@ -66,9 +66,7 @@ export default function CallPlayer({ task, events, lang, onClose }: { task: Task
         <StatePill state={task.state} lang={lang} />
         <button className="btn ghost small" onClick={onClose} aria-label={t(lang, "close")}>✕</button>
       </div>
-      <div className="sim-note">{task.scenario.endsWith("_hero") || task.scenario === "hero"
-        ? (lang === "es" ? "Llamada simulada · voces ElevenLabs · guion de demo" : "Simulated call · ElevenLabs voices · scripted for the demo")
-        : (lang === "es" ? "Llamada simulada · diálogo escrito por IA para esta solicitud" : "Simulated call · dialogue written by AI for this request") + (task.audio ? " · ElevenLabs" : "")}{meta ? ` · ${mode === "live" ? t(lang, "live") : t(lang, "replay")}` : ""}</div>
+      <div className="sim-note">{(lang === "es" ? "Llamada simulada · dos IA conversando: CitaYa y la recepcionista" : "Simulated call · two AIs talking: CitaYa and the receptionist") + (task.audio ? " · ElevenLabs" : "")}{meta ? ` · ${mode === "live" ? t(lang, "live") : t(lang, "replay")}` : ""}</div>
       {meta && (
         <div className="wave" aria-hidden onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); if (audio.current) audio.current.currentTime = ((e.clientX - r.left) / r.width) * meta.duration; }}>
           {meta.peaks.map((p, i) => <span key={i} style={{ height: `${8 + p * 92}%` }} className={i / meta.peaks.length <= progress ? "on" : ""} />)}

@@ -77,7 +77,7 @@ const ROWS: Row[] = [
 
 // ── Rest of the island, so personas created in the profile editor find offices too ──
 // Placed outside the built-in personas' drive limits (see tests/logic.test.ts) so the four
-// scripted demos keep exactly the same shortlists. Built after the filler, so no existing
+// built-in demos keep exactly the same shortlists. Built after the filler, so no existing
 // id or phone number moves.
 export const ISLAND: Row[] = [
   // podiatry: >35 min from Marisol's Caguas home and Hato Rey work
