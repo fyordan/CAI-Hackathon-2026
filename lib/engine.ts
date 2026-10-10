@@ -345,10 +345,14 @@ async function inviteFor(apptId: string): Promise<InviteInput & { delivery: stri
     `SELECT a.*, p.name, p.address, p.phone, p.specialty, r.persona_id FROM appointments a JOIN providers p ON p.id=a.provider_id JOIN care_requests r ON r.id=a.request_id WHERE a.id=$1`, [apptId]);
   const persona = await loadPersona(a!.persona_id);
   const who = persona.patient?.name ?? persona.name;
-  const spec = SPECIALTY_LABEL[a!.specialty as keyof typeof SPECIALTY_LABEL].es;
+  const en = persona.lang === "en";
+  const spec = SPECIALTY_LABEL[a!.specialty as keyof typeof SPECIALTY_LABEL][en ? "en" : "es"];
   const inv: InviteInput = {
-    uid: `${a!.id}@citaya.demo`, title: `Cita de ${spec.toLowerCase()} · ${a!.name}`, location: a!.address,
-    description: `Paciente: ${who}\nOficina: ${a!.name} (${a!.phone})\nReservada por CitaYa (demo). Llegue 15 minutos antes con su tarjeta del plan.`,
+    uid: `${a!.id}@citaya.demo`, location: a!.address,
+    title: en ? `${spec} appointment · ${a!.name}` : `Cita de ${spec.toLowerCase()} · ${a!.name}`,
+    description: en
+      ? `Patient: ${who}\nOffice: ${a!.name} (${a!.phone})\nBooked by CitaYa (demo). Arrive 15 minutes early with your plan card.`
+      : `Paciente: ${who}\nOficina: ${a!.name} (${a!.phone})\nReservada por CitaYa (demo). Llegue 15 minutos antes con su tarjeta del plan.`,
     startsAt: new Date(a!.starts_at).toISOString(), minutes: 30, attendee: persona.email, sequence: a!.calendar_seq,
     status: a!.status === "cancelled" ? "CANCELLED" : "CONFIRMED",
   };

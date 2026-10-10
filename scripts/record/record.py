@@ -79,9 +79,10 @@ def main():
         flows[FLOW](pg)
         log = SAVED + pg.evaluate("window.__audioLog || []")
         video = pg.video.path()
+        if WHATSAPP: pg.request.post(f"{BASE}/api/live/settings", data={"whatsapp": False})
         ctx.close(); b.close()
     fetch_audio(log)
-    json.dump({"t0": t0, "log": log, "webm": video, "files": FILES}, open(f"{OUT}/{FLOW}.audio.json", "w"))
+    json.dump({"t0": t0, "log": log, "webm": video, "files": FILES, "marks": MARKS}, open(f"{OUT}/{FLOW}.audio.json", "w"))
     subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "remux.py"), video, f"{OUT}/{FLOW}.audio.json", f"{OUT}/{FLOW}.mp4"], check=True)
 
 def clock_map(video, t0):
@@ -309,12 +310,23 @@ def desktop_voice(pg):
     click(pg, "[data-testid=tab-calls]", 3500)
     click(pg, "[data-testid=tab-appt]", 4000)
 
+WHATSAPP = os.environ.get("WHATSAPP") == "1"  # turn on the WhatsApp switch on screen; film the phone separately
+MARKS = {}  # wall-clock ms of moments to line the phone recording up against
+
+def mark(name):
+    MARKS[name] = time.time() * 1000
+    print(f"MARK {name} {MARKS[name]:.0f}")
+
 MARISOL = {"voice": "EXAVITQu4vr4xnSDxMaL", "lang": "en"}  # premade English female voice
 
 def submission(pg):
     """The ≤2 min submission video: English Marisol on production, voice only. She describes the symptom
     (no specialty), CitaYa infers podiatry, calls offices in parallel, books, then moves it earlier."""
     pg.goto(BASE); pg.wait_for_timeout(2500)
+    if WHATSAPP:
+        click(pg, "[data-testid=live-settings] summary", 900)
+        click(pg, "[data-testid=live-whatsapp]", 1800)
+        click(pg, "[data-testid=live-settings] summary", 600)
     click(pg, "[data-testid=persona-marisol]", 2000)
     talk(pg, "I have an ingrown toenail that's really hurting. I can only go on Thursdays, and I need it taken care of before Thanksgiving because I'll be away for two weeks.", 1000, **MARISOL)
     talk(pg, "Thirty minutes, from home or from work.", 600, **MARISOL)
@@ -324,12 +336,14 @@ def submission(pg):
     pg.wait_for_selector("[data-testid=call-player]", timeout=90_000)   # opens when the office picks up
     wait_call_audio(pg, 1)
     pg.wait_for_selector("[data-testid=booking]", timeout=60_000)
+    mark("booked")
     pg.wait_for_timeout(1200)
     close_player(pg)
     click(pg, "[data-testid=tab-calls]", 2500)
     click(pg, "[data-testid=tab-appt]", 2500)
     click(pg, "[data-testid=fast-forward]", 800)
     pg.wait_for_selector("[data-testid=toast-rebooked]", timeout=150_000)
+    mark("rebooked")
     wait_call_audio(pg, 2)
     pg.wait_for_timeout(1000)
     close_player(pg)
