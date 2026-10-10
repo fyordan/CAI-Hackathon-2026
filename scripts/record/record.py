@@ -172,7 +172,7 @@ def talk(pg, text, pause=1800):
 
 # ── helpers ──
 def click(pg, sel, pause=500):
-    loc = pg.locator(sel).first
+    loc = pg.locator(f"{sel} >> visible=true").first  # e.g. call-all exists in chat (phone) and list (desktop)
     loc.scroll_into_view_if_needed()
     bb = loc.bounding_box()
     pg.mouse.move(bb["x"] + bb["width"] / 2, bb["y"] + bb["height"] / 2, steps=18)

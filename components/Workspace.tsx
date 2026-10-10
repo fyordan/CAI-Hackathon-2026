@@ -429,7 +429,7 @@ function ShortList({ list, lang, query, hovered, onHover, canCall, onCall }: { l
           <ul>{out.map((c) => <li key={c.id}><span>{c.name}</span><em>{c.excluded_reason}</em></li>)}</ul>
         </details>
       )}
-      {canCall && inc.length > 0 && <div className="sticky-cta"><button className="btn primary wide" onClick={onCall}>📞 {t(lang, "callAll", { n: Math.min(5, inc.length) })}</button></div>}
+      {canCall && inc.length > 0 && <div className="sticky-cta"><button className="btn primary wide" onClick={onCall} data-testid="call-all">📞 {t(lang, "callAll", { n: Math.min(5, inc.length) })}</button></div>}
     </div>
   );
 }
