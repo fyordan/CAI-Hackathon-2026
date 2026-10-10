@@ -5,7 +5,7 @@ import { ResetButton } from "@/components/ResetButton";
 const NEED: Record<string, string> = {
   marisol: "Podiatrist on a Thursday before Thanksgiving, ≤30 min from home or work",
   yadira: "Cardiology follow-up for her father, mornings, wheelchair access",
-  javi: "Dermatologist before 9 or after 4, Plan Vital, earliest opening",
+  javi: "Doesn't know which doctor: describes stomach symptoms by voice, weekdays, earliest opening",
   ana: "OB-GYN annual exam with an English-speaking doctor",
 };
 

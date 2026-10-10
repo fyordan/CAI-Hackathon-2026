@@ -62,7 +62,7 @@ export default function Workspace({ persona }: { persona: Persona }) {
   const [voiceOn, setVoiceOn] = useState(false);
   const voiceOnRef = useRef(false);
   voiceOnRef.current = voiceOn;
-  const [engine, setEngine] = useState<string>("rules");
+  const [engine, setEngine] = useState<string | null>(null); // unknown until the first reply says which one answered
   const [freshKeys, setFreshKeys] = useState<Set<string>>(new Set());
   const seenNotes = useRef<number>(-1);
   const autoOpened = useRef<Set<string>>(new Set());
@@ -121,6 +121,7 @@ export default function Workspace({ persona }: { persona: Persona }) {
 
   const included = shortlist.filter((c) => c.included);
   const calling = (snap?.tasks.length ?? 0) > 0;
+  const nextSuggestion = persona.suggested[(snap?.request.messages ?? []).filter((m) => m.role === "user").length];
   const appt = snap?.appointment ?? null;
   const status = snap?.request.status ?? "drafting";
 
@@ -248,12 +249,11 @@ export default function Workspace({ persona }: { persona: Persona }) {
           )}
           <div ref={msgEnd} />
         </div>
-        {!calling && persona.suggested.some((x) => !(snap?.request.messages ?? []).some((m) => m.text === x)) && (
+        {/* hint the line for the NEXT turn (by count, not exact text: spoken messages never match word for word) */}
+        {!calling && nextSuggestion && (
           <div className="suggest">
             <span>{t(lang, "try")}</span>
-            {persona.suggested.filter((s) => !(snap?.request.messages ?? []).some((m) => m.text === s)).slice(0, 1).map((s) => (
-              <button key={s} className="suggestion" onClick={() => send(s)} disabled={busy}>“{s}”</button>
-            ))}
+            <button className="suggestion" onClick={() => send(nextSuggestion)} disabled={busy}>“{nextSuggestion}”</button>
           </div>
         )}
         {voice.error && <div className="mic-error" role="alert" onClick={voice.clearError} data-testid="mic-error">{voice.error}</div>}
@@ -367,7 +367,7 @@ export default function Workspace({ persona }: { persona: Persona }) {
 }
 
 // ───────────────────────── query bar ─────────────────────────
-function QueryBar({ query, expecting, lang, persona, fresh, engine }: { query: ProviderQuery | null; expecting: string | null; lang: Lang; persona: Persona; fresh: Set<string>; engine: string }) {
+function QueryBar({ query, expecting, lang, persona, fresh, engine }: { query: ProviderQuery | null; expecting: string | null; lang: Lang; persona: Persona; fresh: Set<string>; engine: string | null }) {
   if (!query) return <div className="querybar" />;
   const chips: { key: string; keys: string[]; label: string; sub?: string; strong?: boolean }[] = [];
   if (query.specialty) chips.push({ key: "sp", keys: ["specialty"], label: `${SPECIALTY_LABEL[query.specialty].icon} ${SPECIALTY_LABEL[query.specialty][lang]}`, sub: query.specialty_confidence ? `${Math.round(query.specialty_confidence * 100)}%` : undefined, strong: true });
@@ -389,7 +389,7 @@ function QueryBar({ query, expecting, lang, persona, fresh, engine }: { query: P
   }
   return (
     <div className="querybar" data-testid="querybar">
-      <div className="qb-top"><span className="qb-label">{t(lang, "searching")}</span><span className="engine" title={engine === "rules" ? "Offline rule-based parser; no LLM in this run" : "OpenRouter model"}>{engine === "rules" ? (lang === "es" ? "Parser offline · sin LLM" : "Offline parser · no LLM") : "LLM"}</span></div>
+      <div className="qb-top"><span className="qb-label">{t(lang, "searching")}</span>{engine && <span className="engine" title={engine === "rules" ? "Offline rule-based parser; no LLM in this run" : "OpenRouter model"}>{engine === "rules" ? (lang === "es" ? "Parser offline · sin LLM" : "Offline parser · no LLM") : "LLM"}</span>}</div>
       <div className="chips">
         {chips.map((c) => (
           <span key={c.key + c.label} className={`chip ${c.strong ? "strong" : ""} ${c.keys.some((k) => fresh.has(k)) ? "fresh" : ""}`} data-testid={`chip-${c.key}`}>

@@ -56,8 +56,9 @@ export const PERSONAS: Persona[] = [
     insurance: "mmm-vital",
     email: "javi.demo@example.com",
     suggested: [
-      "Me salió un rash en los brazos que no se va, I need a dermatologist. Weekdays antes de las 9 o después de las 4, lo antes posible.",
-      "Max 40 minutos from either.",
+      "Oye, desde hace un mes me arde el estómago después de comer, sobre todo de noche, y me sube como un sabor agrio a la garganta. No sé qué médico me toca.",
+      "Entre semana, lo antes posible. Hasta media hora de la casa o del trabajo.",
+      "Dale, llámalos.",
     ],
   },
   {
