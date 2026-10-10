@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { thanksgiving, lastAllowedBefore, longDate } from "@/lib/dates";
 import { estimateDriveMin } from "@/lib/geo";
 import { compileProviderQuery, rankCandidates } from "@/lib/search";
-import { buildProviders } from "@/lib/seed-data";
+import { buildProviders, ISLAND } from "@/lib/seed-data";
 import { getPersona } from "@/lib/personas";
 import { afterFailedAttempt, InvalidTransition, transition, validatePath } from "@/lib/calls/machine";
 import { generateTimeline, type Scenario } from "@/lib/calls/scenarios";
@@ -91,4 +91,18 @@ describe("calendar", () => {
     expect(ev.start).toEqual({ dateTime: "2026-11-19T10:00:00-04:00", timeZone: "America/Puerto_Rico" });
     expect(ev.attendees).toEqual([{ email: "marisol.demo@example.com" }]);
   });
+});
+
+describe("island offices stay out of the scripted demos", () => {
+  // persona → specialty it demos and the drive limit it asks for, plus a few minutes of margin
+  const guard = [["marisol", "podiatry", 35], ["yadira", "cardiology", 30], ["javi", "dermatology", 45], ["ana", "ob_gyn", 25]] as const;
+  it.each(guard)("%s never sees an added %s office", (id, sp, min) => {
+    const p = getPersona(id);
+    for (const r of ISLAND.filter((x) => x[2] === sp)) {
+      const pt = { lat: r[4], lng: r[5] };
+      expect(estimateDriveMin(p.home, pt), `${r[0]} from home`).toBeGreaterThan(min);
+      if (p.work) expect(estimateDriveMin(p.work, pt), `${r[0]} from work`).toBeGreaterThan(min);
+    }
+  });
+  it("ids are unique", () => { const ids = buildProviders().map((p) => p.id); expect(new Set(ids).size).toBe(ids.length); });
 });

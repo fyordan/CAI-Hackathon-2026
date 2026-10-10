@@ -75,6 +75,65 @@ const ROWS: Row[] = [
   ["obg-caguas", "Centro de la Mujer Caguas", "ob_gyn", "Caguas", 18.235, -66.03, "mon-fri 08:00-16:00", ALL_PLANS, "es"],
 ];
 
+// ── Rest of the island, so personas created in the profile editor find offices too ──
+// Placed outside the built-in personas' drive limits (see tests/logic.test.ts) so the four
+// scripted demos keep exactly the same shortlists. Built after the filler, so no existing
+// id or phone number moves.
+export const ISLAND: Row[] = [
+  // podiatry: >35 min from Marisol's Caguas home and Hato Rey work
+  ["pod-aguadilla", "Podiatría del Noroeste", "podiatry", "Aguadilla", 18.43, -67.152, "mon-fri 08:00-16:00", "triple-s,mmm-ma,mmm-vital", "es,en", { answer: 0.7 }],
+  ["pod-isabela", "Clínica del Pie Isabela", "podiatry", "Isabela", 18.499, -67.022, "mon-thu 07:30-15:30", "triple-s,mcs-classicare,first-medical-vital", "es"],
+  ["pod-sangerman", "Podiatría San Germán", "podiatry", "San Germán", 18.082, -67.042, "mon-fri 08:00-17:00", "triple-s-advantage,mmm-ma,menonita-vital", "es", { answer: 0.65 }],
+  ["pod-yauco", "Pie y Tobillo Yauco", "podiatry", "Yauco", 18.036, -66.848, "tue-sat 08:00-14:00", "triple-s,mmm-vital,mcs-classicare", "es"],
+  ["pod-manati", "Podiatría Manatí", "podiatry", "Manatí", 18.43, -66.49, "mon-fri 08:00-16:00", "triple-s,triple-s-advantage,first-medical-vital", "es,en", { answer: 0.7 }],
+  ["pod-utuado", "Podiatría de la Montaña", "podiatry", "Utuado", 18.267, -66.701, "mon-wed 08:00-15:00;fri 08:00-12:00", "mmm-vital,menonita-vital,triple-s", "es", { answer: 0.5 }],
+  ["pod-fajardo", "Fajardo Foot Care", "podiatry", "Fajardo", 18.327, -65.654, "mon-fri 08:00-16:00", "triple-s,mmm-ma,mcs-classicare", "es,en", { answer: 0.7 }],
+  ["pod-guayama", "Podiatría Guayama", "podiatry", "Guayama", 17.985, -66.112, "mon-fri 07:00-15:00", ALL_PLANS, "es", { answer: 0.6 }],
+  ["pod-barranquitas", "Clínica del Pie Barranquitas", "podiatry", "Barranquitas", 18.187, -66.307, "mon-thu 08:00-16:00", "triple-s,mmm-vital", "es", { answer: 0.55 }],
+
+  // cardiology: >30 min from Don Ernesto's home in Ponce
+  ["car-mayaguez", "Cardiología del Oeste", "cardiology", "Mayagüez", 18.203, -67.137, "mon-fri 07:30-16:00", "triple-s,triple-s-advantage,mcs-classicare,mmm-ma", "es,en", { answer: 0.7 }],
+  ["car-aguadilla", "Corazón Aguadilla", "cardiology", "Aguadilla", 18.425, -67.155, "mon-thu 08:00-16:00", "triple-s,mmm-vital,first-medical-vital", "es", { answer: 0.6 }],
+  ["car-arecibo", "Cardiología Arecibo", "cardiology", "Arecibo", 18.47, -66.719, "mon-fri 08:00-17:00", "triple-s,mcs-classicare,menonita-vital", "es,en", { answer: 0.65 }],
+  ["car-manati", "Centro Cardiovascular Manatí", "cardiology", "Manatí", 18.427, -66.494, "mon-fri 07:00-15:00", COMMERCIAL_MA, "es"],
+  ["car-fajardo", "Cardiología del Este", "cardiology", "Fajardo", 18.324, -65.65, "mon-fri 08:00-16:00", "triple-s,mmm-ma,mmm-vital", "es,en", { answer: 0.6 }],
+  ["car-humacao", "Cardio Humacao", "cardiology", "Humacao", 18.151, -65.825, "mon-fri 08:00-16:00;sat 08:00-12:00", "triple-s-advantage,mcs-classicare,first-medical-vital", "es"],
+  ["car-guayama", "Cardiología Guayama", "cardiology", "Guayama", 17.983, -66.116, "mon-thu 07:30-15:30", "triple-s,mcs-classicare,mmm-vital", "es", { answer: 0.6 }],
+  ["car-yauco", "Clínica del Corazón Yauco", "cardiology", "Yauco", 18.034, -66.852, "mon-fri 08:00-16:00", "mcs-classicare,mmm-ma,triple-s", "es", { answer: 0.55 }],
+  ["car-bayamon", "Cardiología Bayamón", "cardiology", "Bayamón", 18.401, -66.159, "mon-fri 07:00-17:00", "triple-s,mmm-vital,mmm-ma", "es,en", { answer: 0.7 }],
+
+  // dermatology: >45 min from Javi's Bayamón home and Guaynabo work
+  ["der-mayaguez", "Dermatología Mayagüez", "dermatology", "Mayagüez", 18.199, -67.142, "mon-fri 08:00-17:00", "triple-s,mmm-vital,mcs-classicare", "es,en", { answer: 0.65 }],
+  ["der-aguadilla", "Piel Sana Aguadilla", "dermatology", "Aguadilla", 18.428, -67.15, "mon-fri 07:30-16:30", "triple-s,first-medical-vital", "es", { answer: 0.6 }],
+  ["der-isabela", "Dermatología Isabela", "dermatology", "Isabela", 18.502, -67.027, "tue-sat 08:00-15:00", "mmm-vital,mmm-ma,triple-s", "es"],
+  ["der-arecibo", "Clínica de la Piel Arecibo", "dermatology", "Arecibo", 18.474, -66.713, "mon-fri 08:00-16:00", "triple-s,triple-s-advantage,menonita-vital", "es,en", { answer: 0.7 }],
+  ["der-fajardo", "Dermatología Fajardo", "dermatology", "Fajardo", 18.328, -65.656, "mon-thu 08:00-16:00", "triple-s,mmm-vital,mcs-classicare", "es"],
+  ["der-humacao", "Derma Humacao", "dermatology", "Humacao", 18.148, -65.829, "mon-fri 08:00-17:00", "triple-s,mmm-ma,first-medical-vital", "es,en", { answer: 0.6 }],
+  ["der-guayama", "Dermatología Guayama", "dermatology", "Guayama", 17.986, -66.11, "mon-fri 08:00-16:00", "triple-s,mcs-classicare", "es", { answer: 0.55 }],
+  ["der-yauco", "Piel y Láser Yauco", "dermatology", "Yauco", 18.037, -66.846, "mon-fri 08:00-16:00", "mmm-vital,triple-s,mmm-ma", "es"],
+
+  // OB-GYN: >25 min from Ana Lucía's home in Dorado
+  ["obg-manati", "Centro de la Mujer Manatí", "ob_gyn", "Manatí", 18.429, -66.488, "mon-fri 08:00-16:00", "triple-s,mmm-vital,mcs-classicare", "es,en", { answer: 0.65 }],
+  ["obg-arecibo", "Ginecología Arecibo", "ob_gyn", "Arecibo", 18.471, -66.721, "mon-fri 07:30-15:30", "triple-s,first-medical-vital,mmm-ma", "es", { answer: 0.6 }],
+  ["obg-aguadilla", "Aguadilla Women's Health", "ob_gyn", "Aguadilla", 18.432, -67.149, "mon-fri 08:00-16:00", "triple-s,mmm-ma,menonita-vital", "es,en", { answer: 0.7 }],
+  ["obg-mayaguez", "Ginecología del Oeste", "ob_gyn", "Mayagüez", 18.205, -67.135, "mon-sat 08:00-14:00", ALL_PLANS, "es"],
+  ["obg-ponce", "Centro de la Mujer Ponce", "ob_gyn", "Ponce", 18.014, -66.612, "mon-fri 08:00-16:00", "triple-s,mcs-classicare,mmm-vital", "es,en", { answer: 0.65 }],
+  ["obg-fajardo", "Ginecología Fajardo", "ob_gyn", "Fajardo", 18.323, -65.655, "mon-thu 08:00-16:00", "triple-s,first-medical-vital", "es"],
+  ["obg-humacao", "Humacao OB-GYN", "ob_gyn", "Humacao", 18.152, -65.823, "mon-fri 08:00-16:00", "triple-s-advantage,mmm-vital,triple-s", "es,en", { answer: 0.6 }],
+  ["obg-guayama", "Ginecología Guayama", "ob_gyn", "Guayama", 17.982, -66.118, "mon-fri 08:00-16:00", "triple-s,mcs-classicare", "es", { answer: 0.55 }],
+
+  // primary and urgent care in towns the filler grid doesn't reach
+  ["fam-isabela", "Medicina de Familia Isabela", "family_medicine", "Isabela", 18.5, -67.02, "mon-fri 07:30-16:30", ALL_PLANS, "es"],
+  ["fam-sangerman", "Centro de Salud San Germán", "family_medicine", "San Germán", 18.084, -67.047, "mon-fri 07:00-15:00;sat 08:00-12:00", ALL_PLANS, "es,en"],
+  ["fam-utuado", "Salud Familiar Utuado", "family_medicine", "Utuado", 18.265, -66.698, "mon-fri 08:00-16:00", ALL_PLANS, "es"],
+  ["fam-guayama", "Medicina de Familia Guayama", "family_medicine", "Guayama", 17.987, -66.113, "mon-fri 07:30-16:00", ALL_PLANS, "es"],
+  ["fam-yabucoa", "Centro Médico Yabucoa", "family_medicine", "Yabucoa", 18.051, -65.88, "mon-fri 08:00-16:00", ALL_PLANS, "es"],
+  ["ped-manati", "Pediatría Manatí", "pediatrics", "Manatí", 18.426, -66.49, "mon-fri 08:00-17:00", ALL_PLANS, "es,en"],
+  ["ped-yauco", "Pediatría Yauco", "pediatrics", "Yauco", 18.033, -66.849, "mon-fri 08:00-16:00", ALL_PLANS, "es"],
+  ["urg-riogrande", "Urgencias Río Grande", "urgent_care", "Río Grande", 18.381, -65.83, "mon-sat 07:00-19:00", ALL_PLANS, "es,en"],
+  ["urg-caborojo", "Urgencias Cabo Rojo", "urgent_care", "Cabo Rojo", 18.088, -67.144, "mon-sat 07:00-19:00", ALL_PLANS, "es"],
+];
+
 // Filler so the rest of the island isn't empty (other specialties).
 const FILL_TOWNS: [string, number, number][] = [
   ["San Juan", 18.4655, -66.1057], ["Bayamón", 18.3989, -66.1557], ["Caguas", 18.2342, -66.0356], ["Ponce", 18.0111, -66.6141],
@@ -122,6 +181,7 @@ export function buildProviders(): Provider[] {
         ti % 3 ? ALL_PLANS : COMMERCIAL_MA, ti % 2 ? "es" : "es,en"]));
     });
   });
+  list.push(...ISLAND.map(mk));
   return list;
 }
 

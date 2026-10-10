@@ -8,7 +8,7 @@ calendar invite, keeps watching for an earlier opening, and can call to cancel s
 
 | Piece | Status | Detail |
 |---|---|---|
-| Provider directory (115 offices) | **Synthetic** | Invented names, 787-555 phones, hours, plans, languages. Coordinates are approximate real town locations. |
+| Provider directory (182 offices) | **Synthetic** | Invented names, 787-555 phones, hours, plans, languages. Coordinates are approximate real town locations. |
 | Insurance plans | **Synthetic acceptance** | Insurer names are real PR carriers; which office takes which plan is made up. |
 | Understanding messages | **Real, LLM + fallback** | `lib/brain/llm.ts`: one strict-JSON call to `FAST_MODEL` (OpenRouter, ~1-1.5 s) extracts the query, intent ("yes, call them") and writes the reply. Falls back to the offline rule parser `lib/brain/rules.ts` on error/timeout. |
 | Chip streaming pace | **Artificial (rules only)** | When the rule brain answers, `/api/requests/[id]/chat` adds ~380 ms between chips (`DEMO_PACE_MS`). LLM turns stream immediately. |
@@ -22,7 +22,7 @@ calendar invite, keeps watching for an earlier opening, and can call to cancel s
 | Calendar invite | **Real .ics, Google not connected** | Standards-compliant .ics (REQUEST/CANCEL, SEQUENCE). Google Calendar adapter in `lib/calendar.ts` is untested; no email is sent. |
 | Background re-check | **Simulated clock** | "Skip ahead 3 days" advances a virtual clock and runs the same `rebookScan()` a QStash job would call. |
 | Voice input | **Real** | MediaRecorder with silence detection → `/api/stt` (ElevenLabs Scribe, ~1 s). Replies read aloud via `/api/tts` (ElevenLabs Flash, cached in Postgres). Web Speech API only as fallback. |
-| Auth / personas | **Synthetic** | Four fictional personas, no login. |
+| Auth / personas | **Synthetic** | Four fictional personas, editable (plus new ones) at `/profile/[id]`, no login. |
 
 ## Demo recordings
 
