@@ -9,6 +9,7 @@ import { StatePill } from "./StatePill";
 export interface TaskView {
   id: string; provider_name: string; phone: string; purpose: string; scenario: string; state: string; attempt: number;
   started_at: string; audio: string | null; audio_at: string | null;
+  live: { sheet: { office: string; patient: string; openings: string[]; plans: string[]; hours: string; current: string | null } } | null;
 }
 export interface EventView { id: number; call_id: string; at: string; to_state: string | null; speaker: string | null; text: string | null; payload: Record<string, unknown> | null }
 interface Cue { t: number; speaker: string; text: string | null; event: string | null }
@@ -66,7 +67,7 @@ export default function CallPlayer({ task, events, lang, onClose }: { task: Task
         <StatePill state={task.state} lang={lang} />
         <button className="btn ghost small" onClick={onClose} aria-label={t(lang, "close")}>✕</button>
       </div>
-      <div className="sim-note">{(lang === "es" ? "Llamada simulada · dos IA conversando: CitaYa y la recepcionista" : "Simulated call · two AIs talking: CitaYa and the receptionist") + (task.audio ? " · ElevenLabs" : "")}{meta ? ` · ${mode === "live" ? t(lang, "live") : t(lang, "replay")}` : ""}</div>
+      {task.live ? <LiveSheet task={task} lang={lang} /> : <div className="sim-note">{(lang === "es" ? "Llamada simulada · dos IA conversando: CitaYa y la recepcionista" : "Simulated call · two AIs talking: CitaYa and the receptionist") + (task.audio ? " · ElevenLabs" : "")}{meta ? ` · ${mode === "live" ? t(lang, "live") : t(lang, "replay")}` : ""}</div>}
       {meta && (
         <div className="wave" aria-hidden onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); if (audio.current) audio.current.currentTime = ((e.clientX - r.left) / r.width) * meta.duration; }}>
           {meta.peaks.map((p, i) => <span key={i} style={{ height: `${8 + p * 92}%` }} className={i / meta.peaks.length <= progress ? "on" : ""} />)}
@@ -79,6 +80,27 @@ export default function CallPlayer({ task, events, lang, onClose }: { task: Task
           <li key={i} className={`cap ${l.speaker}`}><span className="cap-who">{who(l.speaker)}</span><span className="cap-text">{l.text}</span></li>
         ))}
       </ol>
+    </div>
+  );
+}
+
+/** Live call: what the person playing the receptionist knows (the office's side of the call). */
+function LiveSheet({ task, lang }: { task: TaskView; lang: Lang }) {
+  const s = task.live!.sheet;
+  const es = lang === "es";
+  return (
+    <div className="live-sheet" data-testid="live-sheet">
+      <div className="sim-note">{es ? "📞 Llamada real a tu teléfono · CitaYa (ElevenLabs) · tú eres la recepcionista" : "📞 Real call to your phone · CitaYa (ElevenLabs) · you are the receptionist"}</div>
+      <strong>{s.office}</strong>
+      {s.current && <div>{es ? "Cita actual" : "Current appointment"}: {s.patient}, {s.current}</div>}
+      {task.purpose !== "cancel" && (
+        <>
+          <div>{es ? "Espacios en tu calendario" : "Openings in your calendar"}:</div>
+          <ul>{s.openings.length ? s.openings.map((o) => <li key={o}>{o}</li>) : <li>{es ? "(ninguno; ofrece lo que quieras)" : "(none; offer anything)"}</li>}</ul>
+        </>
+      )}
+      <div>{es ? "Horario" : "Hours"}: {s.hours}</div>
+      <div>{es ? "Planes" : "Plans"}: {s.plans.join(", ")}</div>
     </div>
   );
 }

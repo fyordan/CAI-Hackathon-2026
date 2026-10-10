@@ -16,13 +16,22 @@ calendar invite, keeps watching for an earlier opening, and can call to cancel s
 | Search + filters + ranking | **Real** | Parameterized SQL on Postgres 16 (Neon-compatible), then plan/day/hours/language/access/drive filters. |
 | Drive times | **Estimated** | Straight-line × 1.25 at 60 km/h + 3 min (`lib/geo.ts`). Swap for Google Routes `computeRouteMatrix`. |
 | Map | **Offline basemap** | Leaflet + Natural Earth PR outline, no streets. Pan/zoom/fit-to-pins are real. Google Maps JS not wired. |
-| Phone calls | **Simulated, AI-to-AI** | Which offices answer is seeded (`lib/calls/scenarios.ts`); each answered call is two models talking turn by turn (`lib/calls/conversation.ts`): CitaYa with the request, a receptionist with the office's invented calendar. Offers are checked in code against the request, and the outcome is validated against the call state machine. Falls back to a one-shot writer (`lib/calls/dialogue.ts`), then templates. No call is ever placed. |
+| Phone calls | **Simulated, AI-to-AI** | Which offices answer is seeded (`lib/calls/scenarios.ts`); each answered call is two models talking turn by turn (`lib/calls/conversation.ts`): CitaYa with the request, a receptionist with the office's invented calendar. Offers are checked in code against the request, and the outcome is validated against the call state machine. Falls back to a one-shot writer (`lib/calls/dialogue.ts`), then templates. With **📞 Live call** on, the booking office instead dials a real phone (see below). |
 | Call audio | **Synthetic (ElevenLabs)** | Booking/rebook/cancel calls are voiced with ElevenLabs Text-to-Dialogue after the conversation finishes (`CALL_AUDIO=featured`). |
 | Book / move earlier / cancel | **Real logic, fake slots** | Book-then-release, one active booking per request (unique index), rebook only if strictly earlier and still valid. |
 | Calendar invite | **Real .ics, Google not connected** | Standards-compliant .ics (REQUEST/CANCEL, SEQUENCE). Google Calendar adapter in `lib/calendar.ts` is untested; no email is sent. |
 | Background re-check | **Simulated clock** | "Skip ahead 3 days" advances a virtual clock and runs the same `rebookScan()` a QStash job would call. |
 | Voice input | **Real** | MediaRecorder with silence detection → `/api/stt` (ElevenLabs Scribe, ~1 s). Replies read aloud via `/api/tts` (ElevenLabs Flash, cached in Postgres). Web Speech API only as fallback. |
 | Auth / personas | **Synthetic** | Four fictional personas, editable (plus new ones) at `/profile/[id]`, no login. |
+
+## Live demo mode
+
+Two switches in the header (home page and workspace), off by default:
+
+- **📞 Live call**: the office that would book (plus the rebook and cancel calls) is a real phone call to `LIVE_CALL_TO`. An ElevenLabs Conversational AI agent dials through a Twilio number, and you play the receptionist. The call window shows "your calendar" so you know what to offer. The agent checks each offer with `/api/live/tool` (the same constraint check the simulated calls use) and records the booking, waitlist or cancellation there. The app polls the conversation for ringing, answer, transcript and hang-up. If the dial fails, that office falls back to a simulated call.
+- **💬 WhatsApp**: on book, move earlier or cancel, a message with the details and the `.ics` link goes to `WHATSAPP_TO` (Twilio sandbox).
+
+Setup: set the Twilio and live variables from `.env.example`, then run `npx tsx --env-file=.env.local scripts/setup-live.ts`, which creates the agent, its tools and the phone import. Put the two IDs it prints into Vercel and redeploy.
 
 ## Demo recordings
 

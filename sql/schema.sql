@@ -69,3 +69,9 @@ CREATE TABLE IF NOT EXISTS audio_clips (
 
 -- Edited/created demo personas (lib/profiles.ts). Built-ins stay in code; not truncated by demo reset.
 CREATE TABLE IF NOT EXISTS personas (id text PRIMARY KEY, data jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now());
+
+-- Live demo mode (lib/live/): one office per round calls a real phone through an ElevenLabs agent,
+-- and bookings are sent over WhatsApp. Switched on from the UI; not truncated by demo reset.
+CREATE TABLE IF NOT EXISTS live_settings (id int PRIMARY KEY DEFAULT 1, calls boolean NOT NULL DEFAULT false, whatsapp boolean NOT NULL DEFAULT false);
+-- live calls: { conversation_id, call_sid, n (transcript lines synced), polled, done, sheet (what the human receptionist sees) }
+ALTER TABLE call_tasks ADD COLUMN IF NOT EXISTS live jsonb;

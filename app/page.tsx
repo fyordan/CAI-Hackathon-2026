@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import { INSURERS } from "@/lib/personas";
 import { listPersonas } from "@/lib/profiles";
 import { ResetButton } from "@/components/ResetButton";
+import { LiveToggle } from "@/components/LiveToggle";
 
 export default async function Home() {
   await connection();
@@ -11,7 +12,7 @@ export default async function Home() {
     <main className="landing">
       <header className="landing-head">
         <div className="brand"><span className="brand-mark" aria-hidden>✚</span> CitaYa <span className="brand-pr">PR</span></div>
-        <ResetButton />
+        <span className="head-actions"><LiveToggle /><ResetButton /></span>
       </header>
       <section className="landing-intro">
         <h1>Say what you need once. CitaYa finds the offices and makes the calls.</h1>

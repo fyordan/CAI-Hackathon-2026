@@ -19,6 +19,9 @@ import { hoursText } from "@/components/format";
 import { INSURERS } from "./personas";
 import { loadPersona } from "./profiles";
 import { searchProviders, SHORTLIST_SIZE } from "./search";
+import { ensureLiveSchema, liveSettings, livePrompt } from "./live/agent";
+import { markAnswered, placeLiveCall, pollLiveCalls, pushStates } from "./live/calls";
+import { sendWhatsApp } from "./live/twilio";
 import { emptyQuery, SPECIALTY_LABEL, type Candidate, type Lang, type Persona, type Provider, type ProviderQuery } from "./types";
 
 type Msg = { role: "user" | "assistant" | "system"; text: string; at: string; kind?: string };
@@ -240,6 +243,17 @@ async function createLiveCall(requestId: string, provider: { id: string; name: s
   return callId;
 }
 
+/** With live mode on, place this call on a real phone instead; null means "simulate it as usual". */
+async function tryLiveCall(requestId: string, provider: { id: string; name: string }, purpose: CallKind, appointmentId: string | null, facts: DialogueFacts, brief: Brief) {
+  if (!(await liveSettings()).calls) return null;
+  const day0 = await today();
+  return placeLiveCall({
+    requestId, providerId: provider.id, purpose, appointmentId, lang: facts.lang,
+    prompt: livePrompt({ kind: purpose, facts }, `${longDate(day0, "en", false)}, ${day0.slice(0, 4)}`),
+    sheet: { office: provider.name, patient: facts.patient, openings: brief.openings.map((o) => o.text), plans: brief.plans, hours: brief.hours, current: facts.currentText ?? null },
+  });
+}
+
 export async function startCalls(requestId: string) {
   const r = await getRequest(requestId);
   if (!r) throw new Error("request not found");
@@ -274,7 +288,9 @@ export async function startCalls(requestId: string) {
       // only openings that break a constraint, so this office can't book
       isos = [slotOn(c, later), slotOn(c, addDays(later, 7))].filter((x): x is string => !!x && !!check(x));
     }
-    await createLiveCall(requestId, c, "book", scenario, sc, factsFor(persona, r.query, c, lang, sc), i * 0.35, null, briefFor(c, lang, isos, check));
+    const facts = factsFor(persona, r.query, c, lang, sc), brief = briefFor(c, lang, isos, check);
+    // live mode: the office that would book is a real call; the rest stay simulated
+    if (!(scenario === "success" && await tryLiveCall(requestId, c, "book", null, facts, brief))) await createLiveCall(requestId, c, "book", scenario, sc, facts, i * 0.35, null, brief);
     i++;
   }
   await q("UPDATE care_requests SET status='calling' WHERE id=$1", [requestId]);
@@ -282,6 +298,12 @@ export async function startCalls(requestId: string) {
 
 // ---------- applying due events ----------
 export async function tick(requestId: string) {
+  await ensureLiveSchema();
+  const live = await one("SELECT 1 FROM call_tasks WHERE request_id=$1 AND live ? 'conversation_id' AND NOT coalesce((live->>'done')::boolean, false) LIMIT 1", [requestId]);
+  if (live) {
+    const r = await getRequest(requestId);
+    await pollLiveCalls(requestId, (await loadPersona(r!.persona_id)).lang);
+  }
   const due = await q<{ id: string }>(
     `SELECT e.id FROM call_events e JOIN call_tasks t ON t.id = e.call_id
      WHERE t.request_id = $1 AND e.applied = false AND e.at <= now() ORDER BY e.at, e.id`, [requestId]);
@@ -334,6 +356,68 @@ export async function icsFor(apptId: string) {
 
 async function notify(requestId: string, kind: string, text: string, payload: Record<string, unknown> = {}) {
   await q("INSERT INTO notifications (request_id, kind, text, payload) VALUES ($1,$2,$3,$4)", [requestId, kind, text, JSON.stringify(payload)]);
+  if (["booked", "rebooked", "cancelled"].includes(kind) && (await liveSettings()).whatsapp) {
+    // never let a message failure break the booking itself
+    await whatsappText(requestId, kind, payload).then(sendWhatsApp).catch((e) => console.warn("[whatsapp]", (e as Error).message));
+  }
+}
+
+const appUrl = () => process.env.APP_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000");
+
+/** The message the patient's phone gets on WhatsApp when an appointment is booked, moved or cancelled. */
+async function whatsappText(requestId: string, kind: string, payload: Record<string, unknown>) {
+  const r = await getRequest(requestId);
+  const persona = await loadPersona(r!.persona_id);
+  const lang = persona.lang;
+  const a = await one<{ starts_at: Date; name: string; address: string; phone: string }>(
+    "SELECT a.starts_at, p.name, p.address, p.phone FROM appointments a JOIN providers p ON p.id=a.provider_id WHERE a.id=$1", [payload.appointment_id]);
+  const when = longDate(new Date(a!.starts_at).toISOString(), lang);
+  const patient = persona.patient?.name ?? persona.name;
+  const specialty = r!.query.specialty ? SPECIALTY_LABEL[r!.query.specialty]?.[lang] ?? "" : "";
+  const plan = r!.query.insurance ? INSURERS[r!.query.insurance]?.name ?? r!.query.insurance : null;
+  const L = (es: string, en: string) => (lang === "en" ? en : es);
+  const office = `🏥 ${a!.name}\n📍 ${a!.address}\n📞 ${a!.phone}`;
+  const ics = `${L("Añadir al calendario", "Add to calendar")}: ${appUrl()}/api/requests/${requestId}/ics`;
+  if (kind === "cancelled") return [`❌ *CitaYa* · ${L("Cita cancelada", "Appointment cancelled")}`, `${patient} · ${specialty}`, `📅 ${when}`, `🏥 ${a!.name}`, L("La oficina ya liberó el espacio. No queda como no-show.", "The office has released the slot, so it won't count as a no-show.")].join("\n");
+  const head = kind === "rebooked"
+    ? `⏩ *CitaYa* · ${L("Cita movida más temprano", "Moved to an earlier appointment")}\n${L("Antes", "Was")}: ${longDate(new Date(payload.from as string).toISOString(), lang)}`
+    : `✅ *CitaYa* · ${L("Cita confirmada", "Appointment booked")}`;
+  return [head, `${patient} · ${specialty}`, `📅 ${when}`, office, plan ? L(`Lleve su tarjeta de ${plan}.`, `Bring your ${plan} card.`) : null, ics].filter(Boolean).join("\n");
+}
+
+// ---------- live phone calls: the agent's webhook tools ----------
+/** check_opening / book_opening / add_to_waitlist / confirm_cancelled, called by the ElevenLabs agent mid-call. */
+export async function liveTool(callId: string, tool: string, datetime?: string): Promise<Record<string, unknown>> {
+  const call = await one<{ request_id: string; purpose: string; appointment_id: string | null }>("SELECT request_id, purpose, appointment_id FROM call_tasks WHERE id=$1 AND live IS NOT NULL", [callId]);
+  if (!call) return { ok: false, error: "unknown call" };
+  const r = await getRequest(call.request_id);
+  const lang = (await loadPersona(r!.persona_id)).lang;
+  // a tool call means someone picked up, even if the poller hasn't seen it yet
+  if ((await markAnswered(callId, lang)).state !== "NEGOTIATING") {
+    return { ok: false, error: "This call is already settled. Thank them and end the call." };
+  }
+  if (tool === "cancel") {
+    if (call.purpose !== "cancel") return { ok: false, error: "This call is not a cancellation." };
+    await pushStates(callId, [{ state: "CANCELLED", payload: { effect: "cancel" } }]);
+    return { ok: true, note: "Cancellation recorded. Thank them and end the call." };
+  }
+  if (tool === "waitlist") {
+    await pushStates(callId, [{ state: "NO_FIT" }, { state: "WAITLISTED", payload: { effect: "waitlist" } }]);
+    return { ok: true, note: "Waitlist recorded. Thank them and end the call." };
+  }
+  if (tool !== "check" && tool !== "book") return { ok: false, error: `unknown tool ${tool}` };
+  if (call.purpose === "cancel") return { ok: false, error: "This call is a cancellation; don't book anything." };
+  const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{1,2}):(\d{2})/.exec(datetime?.trim() ?? "");
+  if (!m) return { ok: false, error: "Pass datetime as local Puerto Rico time, YYYY-MM-DDTHH:MM (24-hour)." };
+  const iso = toISO(m[1], `${m[2].padStart(2, "0")}:${m[3]}`);
+  const now = await virtualNow();
+  const appt = call.purpose === "rebook" && call.appointment_id ? await one<{ starts_at: Date }>("SELECT starts_at FROM appointments WHERE id=$1", [call.appointment_id]) : null;
+  const why = checker(r!.query, localDate(now.toISOString()), now, appt ? new Date(appt.starts_at).toISOString() : undefined)(iso);
+  const when = longDate(iso, lang);
+  if (tool === "check") return why ? { fits: false, when, reason: why } : { fits: true, when };
+  if (why) return { booked: false, when, reason: `${why}. Don't take it; ask for something else.` };
+  await pushStates(callId, [{ state: "SLOT_OFFERED", payload: { starts_at: iso } }, { state: "BOOKED", payload: { effect: call.purpose === "rebook" ? "rebook" : "book", starts_at: iso } }]);
+  return { booked: true, when, note: call.purpose === "rebook" ? "Recorded. Confirm they'll release the old appointment, thank them and end the call." : "Recorded. Thank them and end the call." };
 }
 
 async function applyEffect(requestId: string, callId: string, effect: string, payload: Record<string, unknown>) {
@@ -416,7 +500,8 @@ export async function rebookScan(requestId: string) {
     const rsc: ScenarioCtx = { ...ctx, offerISO: iso, offerText: longDate(iso, lang), currentText: longDate(current, lang) };
     const prov = await providerRow(s.provider_id);
     const brief = briefFor(prov, lang, [iso], checker(r.query, localDate(now.toISOString()), now, current));
-    await createLiveCall(requestId, prov, "rebook", "rebook", rsc, factsFor(persona, r.query, prov, lang, rsc), 0.5, appt.id, brief);
+    const facts = factsFor(persona, r.query, prov, lang, rsc);
+    if (!await tryLiveCall(requestId, prov, "rebook", appt.id, facts, brief)) await createLiveCall(requestId, prov, "rebook", "rebook", rsc, facts, 0.5, appt.id, brief);
     await notify(requestId, "scan", lang === "en" ? "Background check found an earlier opening. Calling to move you." : "La revisión automática encontró un espacio más temprano. Llamando para moverte.");
     return { action: "rebook", reason: d.reason, slot: iso };
   }
@@ -435,14 +520,16 @@ export async function cancelAppointment(requestId: string) {
   const csc: ScenarioCtx = { ...ctxFor(persona, r.query, persona.lang), currentText: longDate(iso, persona.lang) };
   const prov = await providerRow(appt.provider_id);
   const brief = briefFor(prov, persona.lang, [], () => null);
-  await createLiveCall(requestId, prov, "cancel", "cancel", csc, factsFor(persona, r.query, prov, persona.lang, csc), 0.3, appt.id, brief);
+  const facts = factsFor(persona, r.query, prov, persona.lang, csc);
+  if (!await tryLiveCall(requestId, prov, "cancel", appt.id, facts, brief)) await createLiveCall(requestId, prov, "cancel", "cancel", csc, facts, 0.3, appt.id, brief);
 }
 
 // ---------- snapshot for the UI ----------
 export async function snapshot(requestId: string) {
+  await ensureLiveSchema();
   const r = await getRequest(requestId);
   if (!r) return null;
-  const tasks = await q(`SELECT t.id, t.provider_id, p.name AS provider_name, p.phone, t.purpose, t.scenario, t.state, t.attempt, t.started_at, t.audio,
+  const tasks = await q(`SELECT t.id, t.provider_id, p.name AS provider_name, p.phone, t.purpose, t.scenario, t.state, t.attempt, t.started_at, t.audio, t.live,
       (SELECT e.at FROM call_events e WHERE e.call_id=t.id AND e.payload ? 'audio' LIMIT 1) AS audio_at
     FROM call_tasks t JOIN providers p ON p.id=t.provider_id WHERE t.request_id=$1 ORDER BY t.started_at`, [requestId]);
   const events = await q(`SELECT e.id, e.call_id, e.at, e.to_state, e.speaker, e.text, e.payload FROM call_events e JOIN call_tasks t ON t.id=e.call_id

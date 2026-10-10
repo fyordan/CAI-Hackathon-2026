@@ -6,6 +6,7 @@ import { effectiveLatest } from "@/lib/brain/rules";
 import { INSURERS } from "@/lib/personas";
 import { SPECIALTY_LABEL, type Candidate, type Lang, type Persona, type ProviderQuery } from "@/lib/types";
 import CallPlayer, { type EventView, type TaskView } from "./CallPlayer";
+import { LiveToggle } from "./LiveToggle";
 import Transparency from "./Transparency";
 import { StatePill } from "./StatePill";
 import { hoursOn } from "./format";
@@ -101,10 +102,15 @@ export default function Workspace({ persona }: { persona: Persona }) {
     }
   }, [snap]);
 
-  // auto-open the player when a call with rendered audio starts ringing
+  // auto-open the player when a call with rendered audio starts ringing, or a live call is placed
   useEffect(() => {
     if (!snap) return;
     for (const tk of snap.tasks) {
+      if (tk.live && !autoOpened.current.has(tk.id) && !["COMPLETED", "GAVE_UP"].includes(tk.state)) {
+        autoOpened.current.add(tk.id);
+        setPlayer(tk.id);
+        setPanel("calls");
+      }
       if (tk.audio && tk.audio_at && !autoOpened.current.has(tk.id) && Date.parse(tk.audio_at) <= Date.now() + 500 && !["COMPLETED", "GAVE_UP"].includes(tk.state)) {
         autoOpened.current.add(tk.id);
         setPlayer(tk.id);
@@ -227,6 +233,7 @@ export default function Workspace({ persona }: { persona: Persona }) {
         <div className="head-actions">
           {appt?.status === "booked" && <button className="btn" onClick={fastForward} data-testid="fast-forward">⏩ <span className="hide-sm">{t(lang, "ff")}</span><span className="show-sm">+3d</span></button>}
           <a className="btn ghost hide-sm" href={`/profile/${persona.id}`} data-testid="profile">{t(lang, "profile")}</a>
+          <LiveToggle />
           <button className="btn ghost" onClick={() => setShowReal(true)} data-testid="whats-real">{t(lang, "real")}</button>
           <button className="btn ghost hide-sm" onClick={reset}>{t(lang, "reset")}</button>
         </div>
@@ -302,7 +309,7 @@ export default function Workspace({ persona }: { persona: Persona }) {
                     <div className="call-foot">
                       <span>{tk.phone}{tk.attempt > 1 ? ` · ${lang === "es" ? "intento" : "attempt"} ${tk.attempt}` : ""}</span>
                       {(tk.audio || snap?.events.some((e) => e.call_id === tk.id && e.speaker === "office")) && (
-                        <button className="btn small" onClick={() => setPlayer(tk.id)} data-testid="listen">{tk.audio ? "🔊 " + t(lang, "listen") : (lang === "es" ? "Transcripción" : "Transcript")}</button>
+                        <button className="btn small" onClick={() => setPlayer(tk.id)} data-testid="listen">{tk.live ? "📞 " + (lang === "es" ? "En vivo" : "Live") : tk.audio ? "🔊 " + t(lang, "listen") : (lang === "es" ? "Transcripción" : "Transcript")}</button>
                       )}
                     </div>
                   </article>

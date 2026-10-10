@@ -350,3 +350,12 @@ a { color: var(--adoquin); }
   .persona-edit { margin-right: 8px; }
   .profile-actions .spacer { display: none; }
 }
+
+/* live demo switches */
+.live-toggle { display: inline-flex; gap: 6px; }
+.live-pill b { font-size: 12px; letter-spacing: .04em; color: var(--muted, #6b7c88); }
+.live-pill.on { border-color: var(--flamboyan); }
+.live-pill.on b { color: var(--flamboyan); }
+.live-sheet { background: #22394a; border-radius: var(--r-md, 10px); padding: 10px 12px; font-size: 15px; line-height: 1.4; }
+.live-sheet strong { display: block; color: #ffd36b; margin-bottom: 4px; }
+.live-sheet ul { margin: 4px 0; padding-left: 18px; }

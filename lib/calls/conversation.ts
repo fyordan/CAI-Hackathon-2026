@@ -60,13 +60,19 @@ ${b.kind === "cancel" ? '- If they ask to cancel, confirm the cancellation (acti
 - Say dates and times the way people speak them; spell numbers out as words.`;
 }
 
-function agentPrompt(b: CallBrief) {
+/** What CitaYa is trying to get done on this call (shared with the live phone agent, lib/live/). */
+export function goalFor(b: Pick<CallBrief, "kind" | "facts">) {
   const f = b.facts;
-  const goal = b.kind === "book"
+  return b.kind === "book"
     ? `Book a ${f.specialty} appointment that fits ALL of these: days ${f.days || "any weekday"}; times ${f.timeText || "office hours"}; ${f.deadlineText ? `timing ${f.deadlineText} (that last day itself is fine)` : "no deadline"}. Plan: ${f.insurance}.${f.notes.length ? ` Also ask about: ${f.notes.join("; ")}.` : ""} If nothing fits, ask to be put on the cancellation list.`
     : b.kind === "rebook"
       ? `The patient is booked ${f.currentText}. Ask whether anything earlier has opened. Take an earlier opening only if it fits; ask them to release the old one.`
       : `The patient is booked ${f.currentText} and can't make it. Cancel it so the slot goes to someone else (no reason beyond "no puede asistir").`;
+}
+
+function agentPrompt(b: CallBrief) {
+  const f = b.facts;
+  const goal = goalFor(b);
   return `You are CitaYa, an automated scheduling assistant on a phone call with a doctor's office, calling on behalf of ${f.patient}${f.caller_relation ? ` (arranged by ${f.caller_relation})` : ""}. Reply with ONE short spoken turn in ${lang(f)}.
 
 GOAL: ${goal}
