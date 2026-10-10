@@ -191,4 +191,8 @@ export const HERO_SLOTS = [
   { provider_id: "pod-hatorey", starts_at: "2026-11-19T10:00:00-04:00", status: "open", release_at: null },
   // someone else's appointment that gets cancelled "in 2 days" (virtual clock) → rebook target
   { provider_id: "pod-hatorey", starts_at: "2026-10-29T14:30:00-04:00", status: "booked", release_at: "2026-10-11T12:00:00-04:00" },
+  // Marisol / Diego (dermatology, Fridays, asap): first open Friday is the 23rd; next Friday's slot frees up "in 2 days"
+  { provider_id: "der-bayamon2", starts_at: "2026-10-16T09:00:00-04:00", status: "booked", release_at: null },
+  { provider_id: "der-bayamon2", starts_at: "2026-10-23T09:00:00-04:00", status: "open", release_at: null },
+  { provider_id: "der-bayamon2", starts_at: "2026-10-16T15:00:00-04:00", status: "booked", release_at: "2026-10-11T12:00:00-04:00" },
 ];
