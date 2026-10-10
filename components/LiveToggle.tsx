@@ -20,13 +20,17 @@ export function LiveToggle() {
     <button className={`btn small live-pill ${s[key] ? "on" : ""}`} disabled={busy || !s.configured[key]} aria-pressed={s[key]} data-testid={`live-${key}`}
       title={s.configured[key] ? `${label}: ${s[key] ? "on" : "off"}${to ? ` (${to})` : ""}` : `Set ${missing} on the server to enable`}
       onClick={() => flip(key)}>
-      {icon} <span className="hide-sm">{label}</span> <b>{s[key] ? "ON" : "OFF"}</b>
+      {icon} {label} <b>{s[key] ? "ON" : "OFF"}</b>
     </button>
   );
+  // tucked into a dropdown so it doesn't read as a product feature; the dot shows something is on
   return (
-    <span className="live-toggle">
-      {pill("calls", "📞", "Live call", s.phone, "ELEVENLABS_AGENT_ID, ELEVENLABS_PHONE_NUMBER_ID, LIVE_CALL_TO, LIVE_TOOL_SECRET")}
-      {pill("whatsapp", "💬", "WhatsApp", s.whatsapp_to, "TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, WHATSAPP_TO")}
-    </span>
+    <details className="live-settings" data-testid="live-settings">
+      <summary>Live demo settings{(s.calls || s.whatsapp) && <span className="live-dot" aria-label="on" />}</summary>
+      <div className="live-menu">
+        {pill("calls", "📞", "Live call", s.phone, "ELEVENLABS_AGENT_ID, ELEVENLABS_PHONE_NUMBER_ID, LIVE_CALL_TO, LIVE_TOOL_SECRET")}
+        {pill("whatsapp", "💬", "WhatsApp", s.whatsapp_to, "TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, WHATSAPP_TO")}
+      </div>
+    </details>
   );
 }

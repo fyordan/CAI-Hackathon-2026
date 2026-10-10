@@ -22,13 +22,13 @@ calendar invite, keeps watching for an earlier opening, and can call to cancel s
 | Calendar invite | **Real .ics, Google not connected** | Standards-compliant .ics (REQUEST/CANCEL, SEQUENCE). Google Calendar adapter in `lib/calendar.ts` is untested; no email is sent. |
 | Background re-check | **Simulated clock** | "Skip ahead 3 days" advances a virtual clock and runs the same `rebookScan()` a QStash job would call. |
 | Voice input | **Real** | MediaRecorder with silence detection → `/api/stt` (ElevenLabs Scribe, ~1 s). Replies read aloud via `/api/tts` (ElevenLabs Flash, cached in Postgres). Web Speech API only as fallback. |
-| Auth / personas | **Synthetic** | Four fictional personas, editable (plus new ones) at `/profile/[id]`, no login. |
+| Auth / personas | **Synthetic** | Four fictional built-in personas; the home page lists only Marisol (English, never names the specialty) plus any created at `/profile/new`. The others still load at `/demo/<id>`. No login. |
 
 ## Live demo mode
 
-Two switches in the header (home page and workspace), off by default:
+Two switches under **Live demo settings** in the header (home page and workspace), off by default:
 
-- **📞 Live call**: the office that would book (plus the rebook and cancel calls) is a real phone call to `LIVE_CALL_TO`. An ElevenLabs Conversational AI agent dials through a Twilio number, and you play the receptionist. The call window shows "your calendar" so you know what to offer. The agent checks each offer with `/api/live/tool` (the same constraint check the simulated calls use) and records the booking, waitlist or cancellation there. The app polls the conversation for ringing, answer, transcript and hang-up. If the dial fails, that office falls back to a simulated call.
+- **📞 Live call**: the office that would book (plus the rebook and cancel calls) is a real phone call to `LIVE_CALL_TO`. An ElevenLabs Conversational AI agent dials through a Twilio number, and you play the receptionist. The call window shows "your calendar" so you know what to offer. The agent checks each offer with `/api/live/tool` (the same constraint check the simulated calls use) and records the booking, waitlist or cancellation there. The app polls the conversation for ringing, answer, transcript and hang-up. If the dial fails, the call fails or nobody answers, that office is redone as a simulated call so the demo still books. Twilio needs voice permission for the destination country (Puerto Rico is its own entry under Voice → Geo permissions).
 - **💬 WhatsApp**: on book, move earlier or cancel, a message with the details and the `.ics` link goes to `WHATSAPP_TO` (Twilio sandbox).
 
 Setup: set the Twilio and live variables from `.env.example`, then run `npx tsx --env-file=.env.local scripts/setup-live.ts`, which creates the agent, its tools and the phone import. Put the two IDs it prints into Vercel and redeploy.

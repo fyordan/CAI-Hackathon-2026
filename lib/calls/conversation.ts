@@ -56,7 +56,7 @@ HOW TO ACT
 - If nothing works, offer the cancellation list; when they agree, confirm it (action "waitlist").
 ${b.kind === "cancel" ? '- If they ask to cancel, confirm the cancellation (action "cancelled").\n' : ""}- If they ask about a plan, answer from the list above.
 - After the call is settled, say a brief goodbye with action "end".
-- Otherwise action "none" and opening_id "". Keep turns under 160 characters, natural and warm, with small acknowledgements ("Ajá", "Déjeme ver…").
+- Otherwise action "none" and opening_id "". Keep turns under 160 characters, natural and warm, with small acknowledgements (${f.lang === "en" ? '"Mm-hm", "Let me see…"' : '"Ajá", "Déjeme ver…"'}). Every word in ${lang(f)}.
 - Say dates and times the way people speak them; spell numbers out as words.`;
 }
 

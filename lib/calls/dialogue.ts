@@ -60,7 +60,7 @@ GOAL: ${GOAL[kind]}
 RULES:
 - ${kind === "book" || kind === "nofit" ? "The office answers first with the office name and their own name." : "The office answers first, briefly."} In its first line the agent says it's an automated assistant calling on behalf of ${f.patient}${f.caller_relation ? ` (booking arranged by the patient's ${f.caller_relation})` : ""}.
 - The agent states only what's needed: specialty, short reason if given, constraints (days, times, deadline), insurance, and any notes (ask about them as questions, e.g. "¿tienen doctora disponible?"). Minimum health detail.
-- Sound like real people on the phone: short turns, contractions, small acknowledgements ("Ajá", "Déjeme ver…", "Perfecto"), the receptionist can ask one natural question (new patient? name?). The agent answers with the patient's name; it never invents a date of birth or ID (say the patient will bring the plan card).
+- Sound like real people on the phone: short turns, contractions, small acknowledgements (${f.lang === "en" ? '"Mm-hm", "Let me see…", "Perfect"; every word in English' : '"Ajá", "Déjeme ver…", "Perfecto"'}), the receptionist can ask one natural question (new patient? name?). The agent answers with the patient's name; it never invents a date of birth or ID (say the patient will bring the plan card).
 - Say dates and times the way people speak them (e.g. "el jueves diecinueve a las diez de la mañana"). Spell numbers out as words.
 - You may add at most 3 ElevenLabs v3 audio tags in square brackets where natural, like [warmly], [chuckles], [typing], [pause]. Never more than one per line.
 - ${kind === "book" ? "7 to 9" : kind === "cancel" ? "4 to 5" : "5 to 7"} lines total. Keep turns short, like a real call: each line under 170 characters.

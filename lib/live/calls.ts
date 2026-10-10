@@ -8,7 +8,7 @@ import { dialOut, ensureLiveSchema, fetchConversation, type LiveConversation } f
 
 /** What the person playing the receptionist sees on screen. */
 export interface LiveSheet { office: string; patient: string; openings: string[]; plans: string[]; hours: string; current: string | null }
-interface LiveRow { conversation_id?: string; call_sid?: string | null; n?: number; polled?: number; answered?: boolean; done?: boolean; sheet: LiveSheet; dialed_at: number }
+interface LiveRow { conversation_id?: string; call_sid?: string | null; n?: number; polled?: number; answered?: boolean; done?: boolean; sheet: LiveSheet; dialed_at: number; fallback?: unknown }
 
 const POLL_MS = 1500;
 const RING_LIMIT_MS = 75_000;
@@ -48,9 +48,9 @@ const answeredSteps = (lang: Lang) => [{ state: "DIALING" as const }, { state: "
 export const markAnswered = (callId: string, lang: Lang) => pushStates(callId, answeredSteps(lang));
 
 /** Create the task, dial, and return its id; null if the call couldn't be placed (caller falls back to a simulated call). */
-export async function placeLiveCall(o: { requestId: string; providerId: string; purpose: string; appointmentId: string | null; lang: Lang; prompt: string; sheet: LiveSheet }) {
+export async function placeLiveCall(o: { requestId: string; providerId: string; purpose: string; appointmentId: string | null; lang: Lang; prompt: string; sheet: LiveSheet; fallback: unknown }) {
   await ensureLiveSchema();
-  const live: LiveRow = { sheet: o.sheet, dialed_at: Date.now() };
+  const live: LiveRow = { sheet: o.sheet, dialed_at: Date.now(), fallback: o.fallback };
   const call = await one<{ id: string }>(
     "INSERT INTO call_tasks (request_id, provider_id, purpose, scenario, started_at, appointment_id, live) VALUES ($1,$2,$3,'live',now(),$4,$5) RETURNING id",
     [o.requestId, o.providerId, o.purpose, o.appointmentId, JSON.stringify(live)]);
@@ -68,17 +68,19 @@ export async function placeLiveCall(o: { requestId: string; providerId: string; 
   }
 }
 
-/** Advance live calls from the conversation's status and transcript. Called from tick(); throttled per call. */
-export async function pollLiveCalls(requestId: string, lang: Lang) {
+/** Advance live calls from the conversation's status and transcript. Called from tick(); throttled per call.
+ *  onUnanswered: the call failed or nobody picked up; the caller redoes it as a simulated call so the demo still books. */
+export type Unanswered = (callId: string, fallback: unknown) => Promise<unknown>;
+export async function pollLiveCalls(requestId: string, lang: Lang, onUnanswered: Unanswered) {
   const now = Date.now();
   const claimed = await q<{ id: string; live: LiveRow }>(
     `UPDATE call_tasks SET live = jsonb_set(live, '{polled}', to_jsonb($2::bigint)) WHERE request_id=$1 AND live ? 'conversation_id'
        AND NOT coalesce((live->>'done')::boolean, false) AND coalesce((live->>'polled')::bigint, 0) < $3 RETURNING id, live`,
     [requestId, now, now - POLL_MS]);
-  await Promise.all(claimed.map((c) => pollOne(c.id, c.live, lang).catch((e) => console.warn("[live] poll", (e as Error).message))));
+  await Promise.all(claimed.map((c) => pollOne(c.id, c.live, lang, onUnanswered).catch((e) => console.warn("[live] poll", (e as Error).message))));
 }
 
-async function pollOne(callId: string, live: LiveRow, lang: Lang) {
+async function pollOne(callId: string, live: LiveRow, lang: Lang, onUnanswered: Unanswered) {
   const conv: LiveConversation = await fetchConversation(live.conversation_id!);
   const said = conv.transcript.filter((t) => t.message?.trim());
   const answered = live.answered || conv.status === "in-progress" || said.some((t) => t.role === "user");
@@ -86,8 +88,14 @@ async function pollOne(callId: string, live: LiveRow, lang: Lang) {
 
   if (!answered) {
     if (ended || Date.now() - live.dialed_at > RING_LIMIT_MS) {
-      await pushStates(callId, [{ state: "DIALING" }, { state: "RINGING" }, { state: "NO_ANSWER", text: lang === "en" ? "No answer" : "No contestaron" }, { state: "GAVE_UP" }]);
+      const why = conv.metadata?.error?.reason;
+      if (why) console.warn("[live] call failed:", why);
+      const fallback = lang === "en" ? "simulating this office instead" : "simulo esta oficina";
+      await pushStates(callId, conv.status === "failed"
+        ? [{ state: "DIALING" }, { state: "FAILED", text: `${lang === "en" ? "Live call failed" : "Falló la llamada en vivo"}${why ? ` (${why.slice(0, 120)})` : ""}; ${fallback}` }, { state: "GAVE_UP" }]
+        : [{ state: "DIALING" }, { state: "RINGING" }, { state: "NO_ANSWER", text: `${lang === "en" ? "No answer" : "No contestaron"}; ${fallback}` }, { state: "GAVE_UP" }]);
       await q("UPDATE call_tasks SET live = live || '{\"done\":true}'::jsonb WHERE id=$1", [callId]);
+      await onUnanswered(callId, live.fallback);
     } else await pushStates(callId, [{ state: "RINGING", text: lang === "en" ? "Ringing…" : "Sonando…" }]);
     return;
   }

@@ -7,7 +7,8 @@ import { LiveToggle } from "@/components/LiveToggle";
 
 export default async function Home() {
   await connection();
-  const personas = await listPersonas();
+  // judges see one built-in (Marisol) plus any personas created at /profile/new
+  const personas = (await listPersonas()).filter((p) => p.custom || p.id === "marisol");
   return (
     <main className="landing">
       <header className="landing-head">
@@ -26,7 +27,7 @@ export default async function Home() {
               <span className="persona-main">
                 <strong>{p.name}{p.patient ? <span className="for"> for {p.patient.name}</span> : null}</strong>
                 {p.need && <span className="persona-need">{p.need}</span>}
-                <span className="persona-meta">{p.home.label.split("·").pop()?.trim()} · {INSURERS[p.insurance]?.name} · {p.lang === "en" ? "English" : p.id === "javi" ? "Spanglish" : "Español"}{p.edited ? " · edited" : ""}</span>
+                <span className="persona-meta">{p.home.label.split("·").pop()?.trim()} · {INSURERS[p.insurance]?.name} · {p.lang === "en" ? "English" : "Español"}{p.edited ? " · edited" : ""}</span>
               </span>
               <span className="persona-go" aria-hidden>→</span>
             </Link>

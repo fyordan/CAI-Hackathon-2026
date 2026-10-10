@@ -66,7 +66,9 @@ export async function runTurn(input: TurnInput): Promise<TurnResult> {
     const query: ProviderQuery = { ...input.query, ...patch };
     const missing = missingSlots(query);
     const base = { lang, patch, query, missing, redFlag: null, engine: "llm" as const, alternatives: llm.alternatives, model: llm.model, llm_ms: llm.ms };
-    const reply = llm.out.reply.trim();
+    // a reply in the wrong language (the model sometimes copies a Spanish example) falls back to the template
+    const said = llm.out.reply.trim();
+    const reply = said && langHint(said) === (lang === "en" ? "es" : "en") ? "" : said;
     if (missing.length) return { ...base, action: "ask", expecting: missing[0], reply: reply || askReply(missing[0], query, persona, lang) };
     // the model re-states fields it already knows; only real changes count as "the search changed"
     const changed = (Object.keys(llm.patch) as (keyof ProviderQuery)[]).some((k) => canon(llm.patch[k]) !== canon(input.query[k]));

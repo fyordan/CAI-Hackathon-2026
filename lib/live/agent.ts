@@ -92,6 +92,6 @@ export async function dialOut(callId: string, prompt: string, lang: "es" | "en")
 export interface LiveConversation {
   status: "initiated" | "in-progress" | "processing" | "done" | "failed";
   transcript: { role: "user" | "agent"; message: string | null }[];
-  metadata?: { call_duration_secs?: number; termination_reason?: string };
+  metadata?: { call_duration_secs?: number; termination_reason?: string; error?: { reason?: string } | null };
 }
 export const fetchConversation = (id: string) => el<LiveConversation>(`/conversations/${id}`);

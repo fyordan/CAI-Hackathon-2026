@@ -186,7 +186,8 @@ function factsFor(persona: Persona, query: ProviderQuery, provider: { id: string
     lang, office: provider.name, receptionist: receptionistFor(hash(provider.id)),
     patient: sc.patient, caller_relation: persona.patient ? `${persona.name}, who is the patient's family (the patient is their ${persona.patient.relation})` : null,
     specialty: sc.specialty, reason: null, notes: query.notes ?? [], days: sc.days, timeText: tw || null,
-    deadlineText: query.asap ? (lang === "en" ? "as soon as possible" : "lo antes posible") : latest ? `${query.deadline_label ?? ""} (${lang === "en" ? "no later than" : "a más tardar"} ${formatDate(latest, lang)})`.trim() : null,
+    // the exact last day, computed here (the models get the weekday arithmetic wrong)
+    deadlineText: query.asap ? (lang === "en" ? "as soon as possible" : "lo antes posible") : latest ? `${query.deadline_label ? `${query.deadline_label}: ` : ""}${lang === "en" ? "the last day that works is" : "el último día que le sirve es"} ${longDate(latest, lang, false)}` : null,
     insurance: sc.insurance, offerText: sc.offerText, laterText: sc.laterText, currentText: sc.currentText,
   };
 }
@@ -243,15 +244,33 @@ async function createLiveCall(requestId: string, provider: { id: string; name: s
   return callId;
 }
 
+/** Enough to redo a live call as a simulated one (the brief's check is rebuilt from the request). */
+interface Fallback { scenario: Scenario; sc: ScenarioCtx; isos: string[] }
+
 /** With live mode on, place this call on a real phone instead; null means "simulate it as usual". */
-async function tryLiveCall(requestId: string, provider: { id: string; name: string }, purpose: CallKind, appointmentId: string | null, facts: DialogueFacts, brief: Brief) {
+async function tryLiveCall(requestId: string, provider: { id: string; name: string }, purpose: CallKind, appointmentId: string | null, facts: DialogueFacts, brief: Brief, fallback: Fallback) {
   if (!(await liveSettings()).calls) return null;
   const day0 = await today();
   return placeLiveCall({
     requestId, providerId: provider.id, purpose, appointmentId, lang: facts.lang,
     prompt: livePrompt({ kind: purpose, facts }, `${longDate(day0, "en", false)}, ${day0.slice(0, 4)}`),
     sheet: { office: provider.name, patient: facts.patient, openings: brief.openings.map((o) => o.text), plans: brief.plans, hours: brief.hours, current: facts.currentText ?? null },
+    fallback,
   });
+}
+
+/** A live call failed or went unanswered: run the same office as a simulated call. */
+async function simulateInstead(callId: string, fb: unknown) {
+  const f = fb as Fallback | undefined;
+  const t = await one<{ request_id: string; provider_id: string; purpose: string; appointment_id: string | null }>("SELECT request_id, provider_id, purpose, appointment_id FROM call_tasks WHERE id=$1", [callId]);
+  if (!t || !f) return;
+  const r = await getRequest(t.request_id);
+  const persona = await loadPersona(r!.persona_id);
+  const prov = await providerRow(t.provider_id);
+  const now = await virtualNow();
+  const appt = t.appointment_id ? await one<{ starts_at: Date }>("SELECT starts_at FROM appointments WHERE id=$1", [t.appointment_id]) : null;
+  const check = t.purpose === "cancel" ? () => null : checker(r!.query, localDate(now.toISOString()), now, t.purpose === "rebook" && appt ? new Date(appt.starts_at).toISOString() : undefined);
+  await createLiveCall(t.request_id, prov, t.purpose, f.scenario, f.sc, factsFor(persona, r!.query, prov, persona.lang, f.sc), 0.5, t.appointment_id, briefFor(prov, persona.lang, f.isos, check));
 }
 
 export async function startCalls(requestId: string) {
@@ -290,7 +309,7 @@ export async function startCalls(requestId: string) {
     }
     const facts = factsFor(persona, r.query, c, lang, sc), brief = briefFor(c, lang, isos, check);
     // live mode: the office that would book is a real call; the rest stay simulated
-    if (!(scenario === "success" && await tryLiveCall(requestId, c, "book", null, facts, brief))) await createLiveCall(requestId, c, "book", scenario, sc, facts, i * 0.35, null, brief);
+    if (!(scenario === "success" && await tryLiveCall(requestId, c, "book", null, facts, brief, { scenario, sc, isos }))) await createLiveCall(requestId, c, "book", scenario, sc, facts, i * 0.35, null, brief);
     i++;
   }
   await q("UPDATE care_requests SET status='calling' WHERE id=$1", [requestId]);
@@ -302,7 +321,7 @@ export async function tick(requestId: string) {
   const live = await one("SELECT 1 FROM call_tasks WHERE request_id=$1 AND live ? 'conversation_id' AND NOT coalesce((live->>'done')::boolean, false) LIMIT 1", [requestId]);
   if (live) {
     const r = await getRequest(requestId);
-    await pollLiveCalls(requestId, (await loadPersona(r!.persona_id)).lang);
+    await pollLiveCalls(requestId, (await loadPersona(r!.persona_id)).lang, simulateInstead);
   }
   const due = await q<{ id: string }>(
     `SELECT e.id FROM call_events e JOIN call_tasks t ON t.id = e.call_id
@@ -501,7 +520,7 @@ export async function rebookScan(requestId: string) {
     const prov = await providerRow(s.provider_id);
     const brief = briefFor(prov, lang, [iso], checker(r.query, localDate(now.toISOString()), now, current));
     const facts = factsFor(persona, r.query, prov, lang, rsc);
-    if (!await tryLiveCall(requestId, prov, "rebook", appt.id, facts, brief)) await createLiveCall(requestId, prov, "rebook", "rebook", rsc, facts, 0.5, appt.id, brief);
+    if (!await tryLiveCall(requestId, prov, "rebook", appt.id, facts, brief, { scenario: "rebook", sc: rsc, isos: [iso] })) await createLiveCall(requestId, prov, "rebook", "rebook", rsc, facts, 0.5, appt.id, brief);
     await notify(requestId, "scan", lang === "en" ? "Background check found an earlier opening. Calling to move you." : "La revisión automática encontró un espacio más temprano. Llamando para moverte.");
     return { action: "rebook", reason: d.reason, slot: iso };
   }
@@ -521,7 +540,7 @@ export async function cancelAppointment(requestId: string) {
   const prov = await providerRow(appt.provider_id);
   const brief = briefFor(prov, persona.lang, [], () => null);
   const facts = factsFor(persona, r.query, prov, persona.lang, csc);
-  if (!await tryLiveCall(requestId, prov, "cancel", appt.id, facts, brief)) await createLiveCall(requestId, prov, "cancel", "cancel", csc, facts, 0.3, appt.id, brief);
+  if (!await tryLiveCall(requestId, prov, "cancel", appt.id, facts, brief, { scenario: "cancel", sc: csc, isos: [] })) await createLiveCall(requestId, prov, "cancel", "cancel", csc, facts, 0.3, appt.id, brief);
 }
 
 // ---------- snapshot for the UI ----------

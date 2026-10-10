@@ -352,7 +352,13 @@ a { color: var(--adoquin); }
 }
 
 /* live demo switches */
-.live-toggle { display: inline-flex; gap: 6px; }
+.live-settings { position: relative; }
+.live-settings summary { list-style: none; cursor: pointer; font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 8px 6px; display: inline-flex; align-items: center; gap: 6px; }
+.live-settings summary::-webkit-details-marker { display: none; }
+.live-settings summary::after { content: "▾"; }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--flamboyan); }
+.live-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 1300; display: flex; flex-direction: column; gap: 6px; padding: 10px; background: var(--surface); border: 2px solid var(--line-strong); border-radius: var(--r-md); box-shadow: 0 10px 30px rgba(11,26,36,.18); }
+.live-menu .btn { justify-content: space-between; }
 .live-pill b { font-size: 12px; letter-spacing: .04em; color: var(--muted, #6b7c88); }
 .live-pill.on { border-color: var(--flamboyan); }
 .live-pill.on b { color: var(--flamboyan); }
