@@ -35,7 +35,9 @@ Setup: set the Twilio and live variables from `.env.example`, then run `npx tsx 
 
 ## Demo recordings
 
-`docs/demos/` has the four Playwright recordings (desktop full flow with call audio, phone, caregiver + emergency screen, English).
+**Submission video:** `docs/demos/citaya-submission.mp4` (1:52). Recorded against production with voice input only: English Marisol describes an ingrown toenail without naming a specialist, CitaYa infers podiatry, calls five offices in parallel and books Thursday Nov 19, then "Skip ahead 3 days" finds an earlier opening and moves her to Oct 29. Recorded with `BASE=https://cai-hackathon-2026.vercel.app python3 scripts/record/record.py submission`, then the waits for model replies and most of the second call were cut out with ffmpeg.
+
+`docs/demos/` also has the earlier Playwright recordings (desktop full flow with call audio, phone, caregiver + emergency screen, English).
 
 ## Run locally
 

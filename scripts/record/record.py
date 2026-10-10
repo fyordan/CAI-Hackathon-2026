@@ -71,7 +71,7 @@ def main():
                             is_mobile=PHONE, has_touch=False, record_video_dir=OUT, record_video_size={"width": VW, "height": VH},
                             locale="es-PR", timezone_id="America/Puerto_Rico")
         ctx.add_init_script(CURSOR)
-        if "voice" in FLOW: ctx.add_init_script(VOICE)
+        if "voice" in FLOW or FLOW == "submission": ctx.add_init_script(VOICE)
         pg = ctx.new_page()
         t0 = time.time() * 1000
         pg.on("pageerror", lambda e: print("PAGEERROR", e))
@@ -144,14 +144,14 @@ def fetch_audio(log):
         urllib.request.urlretrieve(BASE + src, path)
         FILES[src] = path
 
-def utterance(text, voice=os.environ.get("USER_VOICE", "zwDSHuqO0tEVwNUuHmR1")):
+def utterance(text, voice=os.environ.get("USER_VOICE", "zwDSHuqO0tEVwNUuHmR1"), lang="es"):
     """The demo user's line as speech (ElevenLabs), cached on disk. Default voice: Puerto Rican male."""
     import urllib.request, hashlib, base64
     path = os.path.join(OUT, "audio", "user-" + hashlib.sha1((voice + text).encode()).hexdigest()[:16] + ".mp3")
     if not os.path.exists(path):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         req = urllib.request.Request(f"https://api.elevenlabs.io/v1/text-to-speech/{voice}?output_format=mp3_44100_128",
-            data=json.dumps({"text": text, "model_id": "eleven_multilingual_v2", "language_code": "es",
+            data=json.dumps({"text": text, "model_id": "eleven_multilingual_v2", "language_code": lang,
                              "voice_settings": {"stability": 0.4, "similarity_boost": 0.8, "style": 0.2}}).encode(),
             headers={"xi-api-key": os.environ["ELEVENLABS_API_KEY"], "Content-Type": "application/json"})
         open(path, "wb").write(urllib.request.urlopen(req).read())
@@ -162,9 +162,9 @@ def utterance(text, voice=os.environ.get("USER_VOICE", "zwDSHuqO0tEVwNUuHmR1")):
 def n_ended(pg, prefix):
     return pg.evaluate(f"(window.__audioLog||[]).filter(e => e.src.startsWith('{prefix}') && e.ev === 'ended').length")
 
-def talk(pg, text, pause=1800):
+def talk(pg, text, pause=1800, **voice):
     """Say one line into the (simulated) mic, then wait for the spoken reply to finish, plus a pause."""
-    u = utterance(text)
+    u = utterance(text, **voice)
     replies = n_ended(pg, "/api/tts")
     pg.evaluate("u => { window.__nextUtter = u; }", u)
     click(pg, "[data-testid=mic]", 0)
@@ -309,6 +309,32 @@ def desktop_voice(pg):
     click(pg, "[data-testid=tab-calls]", 3500)
     click(pg, "[data-testid=tab-appt]", 4000)
 
-flows = {"desktop-voice": desktop_voice, "desktop-marisol": desktop_marisol, "phone-marisol": phone_marisol, "desktop-caregiver-safety": desktop_caregiver_safety, "desktop-english": desktop_english}
+MARISOL = {"voice": "EXAVITQu4vr4xnSDxMaL", "lang": "en"}  # premade English female voice
+
+def submission(pg):
+    """The ≤2 min submission video: English Marisol on production, voice only. She describes the symptom
+    (no specialty), CitaYa infers podiatry, calls offices in parallel, books, then moves it earlier."""
+    pg.goto(BASE); pg.wait_for_timeout(2500)
+    click(pg, "[data-testid=persona-marisol]", 2000)
+    talk(pg, "I have an ingrown toenail that's really hurting. I can only go on Thursdays, and I need it taken care of before Thanksgiving because I'll be away for two weeks.", 1000, **MARISOL)
+    talk(pg, "Thirty minutes, from home or from work.", 600, **MARISOL)
+    for i in range(2):
+        hover(pg, f"[data-testid=candidate] >> nth={i}", 900)
+    talk(pg, "Yes, please call them.", 200, **MARISOL)
+    pg.wait_for_selector("[data-testid=call-player]", timeout=90_000)   # opens when the office picks up
+    wait_call_audio(pg, 1)
+    pg.wait_for_selector("[data-testid=booking]", timeout=60_000)
+    pg.wait_for_timeout(1200)
+    close_player(pg)
+    click(pg, "[data-testid=tab-calls]", 2500)
+    click(pg, "[data-testid=tab-appt]", 2500)
+    click(pg, "[data-testid=fast-forward]", 800)
+    pg.wait_for_selector("[data-testid=toast-rebooked]", timeout=150_000)
+    wait_call_audio(pg, 2)
+    pg.wait_for_timeout(1000)
+    close_player(pg)
+    click(pg, "[data-testid=tab-appt]", 3500)
+
+flows = {"submission": submission, "desktop-voice": desktop_voice, "desktop-marisol": desktop_marisol, "phone-marisol": phone_marisol, "desktop-caregiver-safety": desktop_caregiver_safety, "desktop-english": desktop_english}
 if __name__ == "__main__":
     main()
