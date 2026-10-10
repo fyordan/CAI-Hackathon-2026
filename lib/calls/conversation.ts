@@ -75,7 +75,7 @@ HOW TO ACT
 - Your first turn MUST open by saying you are CitaYa, an automated assistant (not a person), calling on behalf of ${f.patient}; then say what you need.
 - Share only what's needed: specialty, constraints, plan. Minimum health detail. Never invent a date of birth or ID; the patient will bring the plan card.
 - After each offer you get a private [calendar check] note. Trust it: accept (action "accept", opening_id = that id) only if it says the opening fits; otherwise politely turn it down (action "decline", opening_id = that id) and ask for something else.
-- When the office confirms or the goal is settled, thank them and end (action "end").
+- If the office asks a question (new patient? name?), answer it and wait: end only after the office has confirmed the booking, the waitlist or the cancellation. Then thank them and end (action "end").
 - Otherwise action "none" and opening_id "". Keep turns under 160 characters, natural, polite and brief.
 - Say dates and times the way people speak them; spell numbers out as words.`;
 }
@@ -100,6 +100,7 @@ export async function runConversation(b: CallBrief, budgetMs = Number(process.en
   const sys = { office: officePrompt(b), agent: agentPrompt(b) };
   let speaker: "agent" | "office" = "office";
   let settled = false;
+  let accepted = false; // agent took an opening the office hasn't confirmed yet
   for (let i = 0; i < MAX_TURNS; i++) {
     const left = budgetMs - (Date.now() - t0);
     if (left < 1500) { console.warn("[conversation] out of time"); return null; }
@@ -110,7 +111,10 @@ export async function runConversation(b: CallBrief, budgetMs = Number(process.en
     // an id that isn't in the calendar is just talk
     if (["offer", "accept", "decline", "book"].includes(turn.action) && !b.openings.some((o) => o.id === turn.opening_id)) turn.action = "none";
     said.push(turn);
-    if (turn.action === "end" || (settled && turn.speaker === "agent" && i > 2)) break;
+    if (turn.speaker === "agent" && turn.action === "accept") accepted = true;
+    // hanging up on an accepted-but-unconfirmed slot would lose it: let the office confirm first
+    const early = turn.action === "end" && turn.speaker === "agent" && accepted && !settled;
+    if ((turn.action === "end" && !early) || (settled && turn.speaker === "agent" && i > 2)) break;
     if (["book", "waitlist", "cancelled"].includes(turn.action)) settled = true;
     speaker = speaker === "office" ? "agent" : "office";
   }

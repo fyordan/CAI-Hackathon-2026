@@ -62,6 +62,7 @@ VOICE = """
 })();
 """
 FILES = {}  # __audioLog src → local file, for audio that isn't under public/
+SAVED = []  # __audioLog entries from pages the flow has already navigated away from
 
 def main():
     with sync_playwright() as p:
@@ -76,7 +77,7 @@ def main():
         pg.on("pageerror", lambda e: print("PAGEERROR", e))
         pg.request.post(f"{BASE}/api/demo/reset")
         flows[FLOW](pg)
-        log = pg.evaluate("window.__audioLog || []")
+        log = SAVED + pg.evaluate("window.__audioLog || []")
         video = pg.video.path()
         ctx.close(); b.close()
     fetch_audio(log)
@@ -264,13 +265,14 @@ def desktop_caregiver_safety(pg):
     say(pg, "Lo antes posible. No más de 25 minutos de su casa.", 5500)
     pg.locator(".excluded summary").click(); pg.wait_for_timeout(3000)
     click(pg, "[data-testid=call-all]", 1000)
-    pg.wait_for_selector("[data-testid=booking]", timeout=60_000)
-    pg.wait_for_timeout(2500)
-    click(pg, "[data-testid=tab-calls]", 1200)
-    click(pg, "[data-testid=call-card][data-outcome=BOOKED] [data-testid=listen]", 4500)
+    pg.wait_for_selector("[data-testid=booking]", timeout=150_000)
+    wait_call_audio(pg, 1)
+    pg.wait_for_timeout(1200)
     close_player(pg)
+    click(pg, "[data-testid=tab-calls]", 3500)
     click(pg, "[data-testid=tab-appt]", 4000)
     # safety: a red-flag message never reaches search or calling
+    SAVED.extend(pg.evaluate("window.__audioLog || []"))  # navigating wipes the page's log
     pg.goto(f"{BASE}/demo/javi"); pg.wait_for_timeout(2500)
     say(pg, "Mi papá tiene dolor de pecho y el brazo izquierdo dormido ahora mismo", 5000)
     pg.wait_for_timeout(2000)
@@ -283,8 +285,10 @@ def desktop_english(pg):
     say(pg, "Within 20 minutes of home.", 5000)
     pg.locator(".excluded summary").click(); pg.wait_for_timeout(2500)
     click(pg, "[data-testid=call-all]", 1000)
-    pg.wait_for_selector("[data-testid=booking]", timeout=60_000)
-    pg.wait_for_timeout(3000)
+    pg.wait_for_selector("[data-testid=booking]", timeout=150_000)
+    wait_call_audio(pg, 1)
+    pg.wait_for_timeout(1200)
+    close_player(pg)
     click(pg, "[data-testid=tab-calls]", 3500)
     click(pg, "[data-testid=tab-appt]", 3500)
 
@@ -298,8 +302,8 @@ def desktop_voice(pg):
     talk(pg, "Entre semana, lo antes posible. Hasta media hora de la casa o del trabajo.")
     talk(pg, "Dale, llámalos.", 500)
     pg.wait_for_selector("[data-testid=call-player]", timeout=60_000)   # opens when the office picks up
-    pg.wait_for_function("(window.__audioLog||[]).some(e => e.src.startsWith('/api/audio/') && e.ev === 'ended')", timeout=120_000)
-    pg.wait_for_selector("[data-testid=booking]", timeout=60_000)
+    pg.wait_for_function("(window.__audioLog||[]).some(e => e.src.startsWith('/api/audio/') && e.ev === 'ended')", timeout=150_000)
+    pg.wait_for_selector("[data-testid=booking]", timeout=150_000)
     pg.wait_for_timeout(1500)
     close_player(pg)
     click(pg, "[data-testid=tab-calls]", 3500)
