@@ -9,7 +9,15 @@ ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 webm, meta_path, out = sys.argv[1:4]
 meta = json.load(open(meta_path))
 t0, log = meta["t0"], meta["log"]
-w, h = map(int, subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", webm], capture_output=True, text=True).stdout.strip().split(","))
+def video_size(path):
+    import re
+    try:
+        out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", path], capture_output=True, text=True).stdout
+        return map(int, out.strip().split(","))
+    except FileNotFoundError:  # no ffprobe (e.g. the imageio-ffmpeg build): read it from ffmpeg's banner
+        err = subprocess.run(["ffmpeg", "-hide_banner", "-i", path], capture_output=True, text=True).stderr
+        return map(int, re.search(r"Video: .*?(\d{2,5})x(\d{2,5})", err).groups())
+w, h = video_size(webm)
 FPS, STEP = 25, 40.0
 reader = subprocess.Popen(["ffmpeg", "-loglevel", "error", "-i", webm, "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], stdout=subprocess.PIPE)
 tmp = out + ".video.mp4"
@@ -53,7 +61,7 @@ if not segs:
 else:
     inputs, filters = ["-i", tmp], []
     for i, (s, e) in enumerate(segs):
-        inputs += ["-i", os.path.join(ROOT, "public", s["src"].lstrip("/"))]
+        inputs += ["-i", meta.get("files", {}).get(s["src"]) or os.path.join(ROOT, "public", s["src"].lstrip("/"))]
         start = max(0, s["wall"] - W0)
         dur = f":duration={(e['wall'] - s['wall']) / 1000:.2f}" if e else ""
         filters.append(f"[{i+1}:a]atrim=start={s['pos']:.2f}{dur},asetpts=PTS-STARTPTS,adelay={int(start)}|{int(start)}[a{i}]")

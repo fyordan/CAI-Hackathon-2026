@@ -120,6 +120,7 @@ export default function Workspace({ persona }: { persona: Persona }) {
 
   const included = shortlist.filter((c) => c.included);
   const calling = (snap?.tasks.length ?? 0) > 0;
+  const nextSuggestion = persona.suggested[(snap?.request.messages ?? []).filter((m) => m.role === "user").length];
   const appt = snap?.appointment ?? null;
   const status = snap?.request.status ?? "drafting";
 
@@ -248,12 +249,11 @@ export default function Workspace({ persona }: { persona: Persona }) {
           )}
           <div ref={msgEnd} />
         </div>
-        {!calling && persona.suggested.some((x) => !(snap?.request.messages ?? []).some((m) => m.text === x)) && (
+        {/* hint the line for the NEXT turn (by count, not exact text: spoken messages never match word for word) */}
+        {!calling && nextSuggestion && (
           <div className="suggest">
             <span>{t(lang, "try")}</span>
-            {persona.suggested.filter((s) => !(snap?.request.messages ?? []).some((m) => m.text === s)).slice(0, 1).map((s) => (
-              <button key={s} className="suggestion" onClick={() => send(s)} disabled={busy}>“{s}”</button>
-            ))}
+            <button className="suggestion" onClick={() => send(nextSuggestion)} disabled={busy}>“{nextSuggestion}”</button>
           </div>
         )}
         {voice.error && <div className="mic-error" role="alert" onClick={voice.clearError} data-testid="mic-error">{voice.error}</div>}

@@ -32,6 +32,37 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 """
 
+# Voice flows: getUserMedia returns a stream that plays the next pre-rendered user line (window.__nextUtter),
+# so the app's real recorder, silence detection and /api/stt all run. Spoken replies (/api/tts) and the
+# user lines are logged to __audioLog like the call audio, so the remux can lay them under the video.
+VOICE = """
+(() => {
+  const log = (src, ev, pos = 0) => (window.__audioLog ??= []).push({ src, ev, wall: Date.now(), pos });
+  // replies play through a detached new Audio(), whose events never reach document; hook play() instead
+  const play = HTMLMediaElement.prototype.play;
+  HTMLMediaElement.prototype.play = function () {
+    if (!this.__logged) {
+      this.__logged = true;
+      for (const ev of ['playing', 'pause', 'ended']) this.addEventListener(ev, () => {
+        const u = this.currentSrc && new URL(this.currentSrc);
+        if (u && u.pathname === '/api/tts') log(u.pathname + u.search, ev === 'playing' ? 'play' : ev, this.currentTime);
+      });
+    }
+    return play.call(this);
+  };
+  navigator.mediaDevices.getUserMedia = async () => {
+    const ctx = new AudioContext(), dest = ctx.createMediaStreamDestination();
+    const u = window.__nextUtter; window.__nextUtter = null;
+    if (u) {
+      const buf = await ctx.decodeAudioData(await (await fetch(u.data)).arrayBuffer());
+      setTimeout(() => { const s = ctx.createBufferSource(); s.buffer = buf; s.connect(dest); s.onended = () => log(u.src, 'ended'); log(u.src, 'play'); s.start(); }, 700);
+    }
+    return dest.stream;
+  };
+})();
+"""
+FILES = {}  # __audioLog src → local file, for audio that isn't under public/
+
 def main():
     with sync_playwright() as p:
         b = p.chromium.launch(args=["--autoplay-policy=no-user-gesture-required"])
@@ -39,6 +70,7 @@ def main():
                             is_mobile=PHONE, has_touch=False, record_video_dir=OUT, record_video_size={"width": VW, "height": VH},
                             locale="es-PR", timezone_id="America/Puerto_Rico")
         ctx.add_init_script(CURSOR)
+        if "voice" in FLOW: ctx.add_init_script(VOICE)
         pg = ctx.new_page()
         t0 = time.time() * 1000
         pg.on("pageerror", lambda e: print("PAGEERROR", e))
@@ -47,7 +79,8 @@ def main():
         log = pg.evaluate("window.__audioLog || []")
         video = pg.video.path()
         ctx.close(); b.close()
-    json.dump({"t0": t0, "log": log, "webm": video}, open(f"{OUT}/{FLOW}.audio.json", "w"))
+    fetch_audio(log)
+    json.dump({"t0": t0, "log": log, "webm": video, "files": FILES}, open(f"{OUT}/{FLOW}.audio.json", "w"))
     subprocess.run([sys.executable, os.path.join(os.path.dirname(__file__), "remux.py"), video, f"{OUT}/{FLOW}.audio.json", f"{OUT}/{FLOW}.mp4"], check=True)
 
 def clock_map(video, t0):
@@ -99,6 +132,43 @@ def mux(video, log, t0, out):
     args += ["-r", "25", "-c:v", "libx264", "-preset", "medium", "-crf", "26", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", out]
     subprocess.run(args, check=True)
     print("wrote", out, "audio segments:", len(segs))
+
+def fetch_audio(log):
+    """Download server-generated audio (spoken replies, generated calls); both are cached server-side, so this is free."""
+    import urllib.request, hashlib
+    for src in {e["src"] for e in log}:
+        if src in FILES or not src.startswith("/api/"): continue
+        path = os.path.join(OUT, "audio", hashlib.sha1(src.encode()).hexdigest()[:16] + ".mp3")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        urllib.request.urlretrieve(BASE + src, path)
+        FILES[src] = path
+
+def utterance(text, voice=os.environ.get("USER_VOICE", "zwDSHuqO0tEVwNUuHmR1")):
+    """The demo user's line as speech (ElevenLabs), cached on disk. Default voice: Puerto Rican male."""
+    import urllib.request, hashlib, base64
+    path = os.path.join(OUT, "audio", "user-" + hashlib.sha1((voice + text).encode()).hexdigest()[:16] + ".mp3")
+    if not os.path.exists(path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        req = urllib.request.Request(f"https://api.elevenlabs.io/v1/text-to-speech/{voice}?output_format=mp3_44100_128",
+            data=json.dumps({"text": text, "model_id": "eleven_multilingual_v2", "language_code": "es",
+                             "voice_settings": {"stability": 0.4, "similarity_boost": 0.8, "style": 0.2}}).encode(),
+            headers={"xi-api-key": os.environ["ELEVENLABS_API_KEY"], "Content-Type": "application/json"})
+        open(path, "wb").write(urllib.request.urlopen(req).read())
+    src = "user:" + os.path.basename(path)
+    FILES[src] = path
+    return {"src": src, "data": "data:audio/mpeg;base64," + base64.b64encode(open(path, "rb").read()).decode()}
+
+def n_ended(pg, prefix):
+    return pg.evaluate(f"(window.__audioLog||[]).filter(e => e.src.startsWith('{prefix}') && e.ev === 'ended').length")
+
+def talk(pg, text, pause=1800):
+    """Say one line into the (simulated) mic, then wait for the spoken reply to finish, plus a pause."""
+    u = utterance(text)
+    replies = n_ended(pg, "/api/tts")
+    pg.evaluate("u => { window.__nextUtter = u; }", u)
+    click(pg, "[data-testid=mic]", 0)
+    pg.wait_for_function(f"(window.__audioLog||[]).filter(e => e.src.startsWith('/api/tts') && e.ev === 'ended').length > {replies}", timeout=60_000)
+    pg.wait_for_timeout(pause)
 
 # ── helpers ──
 def click(pg, sel, pause=500):
@@ -217,6 +287,23 @@ def desktop_english(pg):
     click(pg, "[data-testid=tab-calls]", 3500)
     click(pg, "[data-testid=tab-appt]", 3500)
 
-flows = {"desktop-marisol": desktop_marisol, "phone-marisol": phone_marisol, "desktop-caregiver-safety": desktop_caregiver_safety, "desktop-english": desktop_english}
+def desktop_voice(pg):
+    """Unscripted, voice-only: the user describes symptoms (no specialty named) and the model picks the specialist."""
+    pg.goto(BASE); pg.wait_for_timeout(1800)
+    click(pg, "[data-testid=persona-javi]", 2500)
+    talk(pg, "Oye, desde hace un mes me arde el estómago después de comer, sobre todo de noche, y me sube como un sabor agrio a la garganta. No sé qué médico me toca.")
+    for i in range(2):
+        hover(pg, f"[data-testid=candidate] >> nth={i}", 1200)
+    talk(pg, "Entre semana, lo antes posible. Hasta media hora de la casa o del trabajo.")
+    talk(pg, "Dale, llámalos.", 500)
+    pg.wait_for_selector("[data-testid=call-player]", timeout=60_000)   # opens when the office picks up
+    pg.wait_for_function("(window.__audioLog||[]).some(e => e.src.startsWith('/api/audio/') && e.ev === 'ended')", timeout=120_000)
+    pg.wait_for_selector("[data-testid=booking]", timeout=60_000)
+    pg.wait_for_timeout(1500)
+    close_player(pg)
+    click(pg, "[data-testid=tab-calls]", 3500)
+    click(pg, "[data-testid=tab-appt]", 4000)
+
+flows = {"desktop-voice": desktop_voice, "desktop-marisol": desktop_marisol, "phone-marisol": phone_marisol, "desktop-caregiver-safety": desktop_caregiver_safety, "desktop-english": desktop_english}
 if __name__ == "__main__":
     main()

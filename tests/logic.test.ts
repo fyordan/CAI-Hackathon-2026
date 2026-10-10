@@ -95,7 +95,7 @@ describe("calendar", () => {
 
 describe("island offices stay out of the scripted demos", () => {
   // persona → specialty it demos and the drive limit it asks for, plus a few minutes of margin
-  const guard = [["marisol", "podiatry", 35], ["yadira", "cardiology", 30], ["javi", "dermatology", 45], ["ana", "ob_gyn", 25]] as const;
+  const guard = [["marisol", "podiatry", 35], ["yadira", "cardiology", 30], ["javi", "dermatology", 45], ["javi", "gastroenterology", 35], ["ana", "ob_gyn", 25]] as const;
   it.each(guard)("%s never sees an added %s office", (id, sp, min) => {
     const p = getPersona(id);
     for (const r of ISLAND.filter((x) => x[2] === sp)) {

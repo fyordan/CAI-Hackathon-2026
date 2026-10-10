@@ -36,6 +36,7 @@ export default function ProfileForm({ initial, mode }: { initial: Persona; mode:
   const [need, setNeed] = useState(initial.need ?? "");
   const [ex1, setEx1] = useState(initial.suggested[0] ?? "");
   const [ex2, setEx2] = useState(initial.suggested[1] ?? "");
+  const [ex3, setEx3] = useState(initial.suggested[2] ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -63,7 +64,8 @@ export default function ProfileForm({ initial, mode }: { initial: Persona; mode:
       patient: caregiver ? { name: patient.name, age: Number(patient.age), relation: patient.relation } : null,
       home: { label: placeLabel("home", home.town, lang, patientFirst), lat: home.lat, lng: home.lng },
       work: work ? { label: placeLabel("work", work.town, lang, null), lat: work.lat, lng: work.lng } : null,
-      suggested: [ex1, ex2].map((x) => x.trim()).filter(Boolean),
+      // the chat offers suggested[n] on turn n, so keep them in order without gaps
+      suggested: [ex1, ex2, ex3].map((x) => x.trim()).filter(Boolean),
     };
     const res = await fetch(mode === "new" ? "/api/personas" : `/api/personas/${initial.id}`, { method: mode === "new" ? "POST" : "PUT", body: JSON.stringify(body) });
     const data = await res.json().catch(() => ({}));
@@ -162,6 +164,7 @@ export default function ProfileForm({ initial, mode }: { initial: Persona; mode:
         <label className="field">What they need <small>shown on the persona list</small><input value={need} onChange={(e) => setNeed(e.target.value)} maxLength={140} placeholder="Dermatologist after 4pm, ≤20 min from home" /></label>
         <label className="field">First message <small>offered as “Try:” in the chat</small><textarea value={ex1} onChange={(e) => setEx1(e.target.value)} rows={3} maxLength={400} placeholder={lang === "en" ? "I need a dermatologist for a rash, weekdays after 4pm." : "Necesito un dermatólogo por un rash, entre semana después de las 4."} /></label>
         <label className="field">Follow-up <small>usually the drive time answer</small><input value={ex2} onChange={(e) => setEx2(e.target.value)} maxLength={400} placeholder={lang === "en" ? "Within 20 minutes of home." : "Veinte minutos de mi casa."} /></label>
+        <label className="field">Third message <small>optional, e.g. the go-ahead to call</small><input value={ex3} onChange={(e) => setEx3(e.target.value)} maxLength={400} placeholder={lang === "en" ? "Yes, call them." : "Dale, llámalos."} /></label>
       </fieldset>
 
       {error && <p className="form-error" role="alert">{error}</p>}
