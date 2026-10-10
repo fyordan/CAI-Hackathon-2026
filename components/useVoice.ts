@@ -66,10 +66,13 @@ export function useVoice({ lang, onText }: { lang: Lang; onText: (text: string) 
     if (!window.isSecureContext) return msg("El micrófono necesita https o localhost.", "The mic needs https or localhost.");
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") return webSpeech();
     setMic("requesting");
+    // created inside the click so it isn't left "suspended" when the permission prompt eats the user gesture
+    const ctx = new AudioContext();
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     } catch (e) {
+      ctx.close().catch(() => {});
       setMic("idle");
       const name = (e as DOMException).name;
       if (name === "NotAllowedError") return msg("Permiso de micrófono denegado. Actívalo en el candado de la barra de direcciones.", "Microphone permission denied. Allow it from the lock icon in the address bar.");
@@ -81,19 +84,19 @@ export function useVoice({ lang, onText }: { lang: Lang; onText: (text: string) 
     const chunks: Blob[] = [];
     rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
 
-    const ctx = new AudioContext();
+    await ctx.resume().catch(() => {});
     const src = ctx.createMediaStreamSource(stream);
     const an = ctx.createAnalyser();
     an.fftSize = 1024;
     src.connect(an);
     const buf = new Float32Array(an.fftSize);
     const t0 = performance.now();
-    let heard = false, lastLoud = t0, raf = 0, stopped = false;
+    let heard = false, lastLoud = t0, timer = 0, stopped = false;
 
     const finish = () => {
       if (stopped) return;
       stopped = true;
-      cancelAnimationFrame(raf);
+      clearInterval(timer);
       if (rec.state !== "inactive") rec.stop();
     };
     stopRef.current = finish;
@@ -105,8 +108,7 @@ export function useVoice({ lang, onText }: { lang: Lang; onText: (text: string) 
       setLevel(Math.min(1, rms * 12));
       const now = performance.now();
       if (rms > THRESHOLD) { heard = true; lastLoud = now; }
-      if ((heard && now - lastLoud > SILENCE_MS) || (!heard && now - t0 > NO_SPEECH_MS) || now - t0 > MAX_MS) return finish();
-      raf = requestAnimationFrame(loop);
+      if ((heard && now - lastLoud > SILENCE_MS) || (!heard && now - t0 > NO_SPEECH_MS) || now - t0 > MAX_MS) finish();
     };
 
     rec.onstop = async () => {
@@ -133,7 +135,8 @@ export function useVoice({ lang, onText }: { lang: Lang; onText: (text: string) 
     };
     rec.start(250);
     setMic("listening");
-    raf = requestAnimationFrame(loop);
+    // a timer, not requestAnimationFrame: rAF stops in background tabs and the mic would never close
+    timer = window.setInterval(loop, 50);
   }, [msg, stopSpeaking, webSpeech]);
 
   const toggle = useCallback(() => {
