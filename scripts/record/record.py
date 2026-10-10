@@ -69,7 +69,9 @@ def main():
         b = p.chromium.launch(args=["--autoplay-policy=no-user-gesture-required"])
         ctx = b.new_context(viewport={"width": VW, "height": VH}, device_scale_factor=2 if PHONE else 1,
                             is_mobile=PHONE, has_touch=False, record_video_dir=OUT, record_video_size={"width": VW, "height": VH},
-                            locale="es-PR", timezone_id="America/Puerto_Rico")
+                            locale="es-PR", timezone_id="America/Puerto_Rico",
+                            # Vercel Deployment Protection: Settings → Deployment Protection → Protection Bypass for Automation
+                            extra_http_headers={"x-vercel-protection-bypass": os.environ["VERCEL_BYPASS"], "x-vercel-set-bypass-cookie": "true"} if os.environ.get("VERCEL_BYPASS") else None)
         ctx.add_init_script(CURSOR)
         if "voice" in FLOW or FLOW == "submission": ctx.add_init_script(VOICE)
         pg = ctx.new_page()
